@@ -285,53 +285,66 @@ class AmazfitDevice {
                 } catch (e) { }
             }
 
+            this.log("Vanguard Extreme: Ping de Auth para calentar enlace...", "ble");
+            try {
+                await this.authChar.readValue();
+                this.log("¡Ping OK! Enlace GATT activo.", "ble");
+            } catch (e) {
+                this.log("Ping fallido, pero continuamos...", "ble");
+            }
+
             const forceWrite = async (data, label) => {
                 const chars = [this.fetchControlChar, this.fetchDataChar].filter((c, i, a) => c && a.indexOf(c) === i);
+                let writeSuccess = false;
+
                 for (const char of chars) {
                     try {
-                        this.log(`Enviando [${label}] a ${char.uuid.slice(-4)}...`, "ble");
+                        this.log(`Double-Tap: Enviando [${label}] a ${char.uuid.slice(-4)}...`, "ble");
                         await char.writeValue(data);
-                        return true;
+                        await new Promise(r => setTimeout(r, 100));
+                        await char.writeValue(data); // Segundo toque
+                        writeSuccess = true;
                     } catch (e) {
                         try {
-                            this.log(`Fallback WithoutResponse en ${char.uuid.slice(-4)}...`, "ble");
+                            this.log(`Double-Tap Fallback WithoutResponse en ${char.uuid.slice(-4)}...`, "ble");
                             await char.writeValueWithoutResponse(data);
-                            return true;
+                            await new Promise(r => setTimeout(r, 100));
+                            await char.writeValueWithoutResponse(data);
+                            writeSuccess = true;
                         } catch (e2) {
                             this.log(`Fallo en ${char.uuid.slice(-4)}: ${e2.message}`, "error");
                         }
                     }
                 }
-                return false;
+                return writeSuccess;
             };
 
-            this.log("Vanguard: Enviando RESET...", "ble");
+            this.log("Fase 1: RESET (Double-Tap)...", "ble");
             await forceWrite(new Uint8Array([0x01, 0x00]), "RESET");
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 1200));
 
-            this.log("Vanguard: Enviando Warmup (01 02)...", "ble");
+            this.log("Fase 2: Warmup (01 02)...", "ble");
             await forceWrite(new Uint8Array([0x01, 0x02]), "WARMUP");
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 1200));
 
             const variants = [
                 { name: "Standard (2-bytes)", cmd: new Uint8Array([0x01, 0x01]) },
-                { name: "Bip Mini (4-bytes)", cmd: new Uint8Array([0x01, 0x01, 0x00, 0x00]) },
-                { name: "Extended (6-bytes)", cmd: new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00]) },
-                { name: "Full Sync (10-bytes)", cmd: new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) }
+                { name: "Mock TS (4-bytes)", cmd: new Uint8Array([0x01, 0x01, 0xE0, 0x07, 0x01, 0x01]) }, // 2016-01-01 mock
+                { name: "Full Sync 2024 (10-bytes)", cmd: new Uint8Array([0x01, 0x01, 0xE8, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]) } // 2024 mock
             ];
 
             let success = false;
             for (const variant of variants) {
                 if (this.totalReceived > 0) break;
                 success = await forceWrite(variant.cmd, variant.name);
-                if (success) await new Promise(r => setTimeout(r, 2000));
+                if (success) await new Promise(r => setTimeout(r, 2500));
             }
 
             if (!success) {
-                throw new Error("El reloj rechazó todas las variantes de escritura Vanguard.");
+                throw new Error("El reloj rechazó todas las variantes Extreme Recovery.");
             }
 
-            this.log("Vanguard completado. Esperando datos...", "system");
+            this.log("Extreme Recovery completado. Esperando flujo de datos...", "system");
         } catch (err) {
             this.log(`ERROR crítico de sincronización: ${err.message}`, "error");
             this.log("TIP: Reinicia el Bluetooth y cierra Zepp/Notify de fondo.", "system");
@@ -353,7 +366,7 @@ class AmazfitDevice {
 
         if (isControl) {
             const cmdReply = data[1];
-            const APP_VERSION = "1.1.9";
+            const APP_VERSION = "1.2.0";
             const status = data[2];
 
             if (cmdReply === 0x01 && status === 0x01) {

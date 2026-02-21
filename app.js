@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.1.9";
+    const APP_VERSION = "1.2.0";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -132,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     refreshBtn.addEventListener('click', async () => {
-        showLoading('Descargando lista de actividades...');
+        showLoading('Forzando descarga (Extreme Mode)...');
 
         // Safety hatch: Force hide loading after 15 seconds if sync hangs
         const safetyHatch = setTimeout(() => {
