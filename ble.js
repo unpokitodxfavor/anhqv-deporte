@@ -335,6 +335,12 @@ class AmazfitDevice {
                 }
             }
 
+            if (cmdReply === 0x03 && status === 0x01) {
+                this.log("Puerta 0x03 abierta. Enviando comando de disparo final (0x05)...", "ble");
+                this._sendSyncAck(0x05);
+                return;
+            }
+
             if (cmdReply === 0x02 && status === 0x04) {
                 this.log("ACK 0x02 rechazado (Status 04). Probando ACK alternativo 0x03...", "error");
                 this._sendSyncAck(0x03);
@@ -344,6 +350,11 @@ class AmazfitDevice {
             if (cmdReply === 0x03 && status === 0x04) {
                 this.log("ACK 0x03 rechazado. Probando comando final 0x05 (v3)...", "error");
                 this._sendSyncAck(0x05);
+                return;
+            }
+
+            if (cmdReply === 0x05 && status === 0x01) {
+                this.log("¡Handshake completo! El reloj debería empezar a volcar bloques ahora.", "system");
                 return;
             }
         }
