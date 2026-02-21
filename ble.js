@@ -291,42 +291,38 @@ class AmazfitDevice {
                 await new Promise(r => setTimeout(r, 500));
             } catch (e) { }
 
-            const fetchCmd = new Uint8Array([0x01, 0x01]);
+            this.log("Fase de Calentamiento (Read Count 01 02)...", "ble");
+            try {
+                await this.fetchControlChar.writeValue(new Uint8Array([0x01, 0x02]));
+                await new Promise(r => setTimeout(r, 800));
+            } catch (e) { }
 
-            // ESTRATEGIA DE ESCRITURA EXPERIMENTAL
-            const attemptWrite = async (char, label) => {
-                this.log(`Intentando enviar comando a ${label}...`, "ble");
+            const variants = [
+                { name: "Standard (2-bytes)", cmd: new Uint8Array([0x01, 0x01]) },
+                { name: "Extended (6-bytes)", cmd: new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00]) },
+                { name: "Full Sync (10-bytes)", cmd: new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) }
+            ];
+
+            let success = false;
+            for (const variant of variants) {
+                if (this.totalReceived > 0) break; // Si ya empezó a bajar algo, paramos la ráfaga
+
+                this.log(`Probando variante: ${variant.name}...`, "ble");
                 try {
-                    await char.writeValue(fetchCmd);
-                    this.lastWorkingChar = char; // Guardamos el éxito
-                    return true;
+                    await this.fetchControlChar.writeValue(variant.cmd);
+                    success = true;
+                    this.lastWorkingChar = this.fetchControlChar;
+                    await new Promise(r => setTimeout(r, 1500)); // Esperar respuesta antes de la siguiente variante
                 } catch (e) {
-                    this.log(`Fallo writeValue en ${label}: ${e.message}`, "error");
-                    try {
-                        this.log(`Probando fallback WithoutResponse en ${label}...`, "ble");
-                        await char.writeValueWithoutResponse(fetchCmd);
-                        this.lastWorkingChar = char; // Guardamos el éxito
-                        return true;
-                    } catch (e2) {
-                        this.log(`Fallo total en ${label}: ${e2.message}`, "error");
-                        return false;
-                    }
+                    this.log(`Fallo variante ${variant.name}: ${e.message}`, "error");
                 }
-            };
-
-            let success = await attemptWrite(this.fetchControlChar, "FETCH_CONTROL (0005)");
-
-            // Si falla el canal primario, probamos el de DATA (algunos modelos lo prefieren)
-            if (!success && this.fetchDataChar && this.fetchDataChar.uuid !== this.fetchControlChar.uuid) {
-                this.log("Reintentando con canal alternativo (PATCH)...", "system");
-                success = await attemptWrite(this.fetchDataChar, "FETCH_DATA (0004)");
             }
 
             if (!success) {
-                throw new Error("No se pudo enviar el comando a ninguna característica. El reloj ha rechazado la operación.");
+                throw new Error("Ninguna variante de comando fue aceptada por el reloj.");
             }
 
-            this.log("¡Comando aceptado! Esperando bytes del reloj...", "system");
+            this.log("Ráfaga de comandos completada. Esperando flujo de datos...", "system");
         } catch (err) {
             this.log(`ERROR crítico de sincronización: ${err.message}`, "error");
             this.log("TIP: Reinicia el Bluetooth y cierra Zepp/Notify de fondo.", "system");
@@ -348,6 +344,7 @@ class AmazfitDevice {
 
         if (isControl) {
             const cmdReply = data[1];
+            const APP_VERSION = "1.1.8";
             const status = data[2];
 
             if (cmdReply === 0x01 && status === 0x01) {
