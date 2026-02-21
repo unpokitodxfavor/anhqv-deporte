@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.1.3";
+    const APP_VERSION = "1.1.4";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -170,19 +170,39 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function renderRealActivityProgress(data) {
-        // Esta función actualizaría la UI mientras se descargan los datos
-        const activitiesList = document.querySelector('.activities-list');
-        if (activitiesList && !document.getElementById('real-sync-item')) {
-            activitiesList.innerHTML = `
-                <div class="activity-card" id="real-sync-item">
-                <div class="activity-info">
-                    <h3>Sincronización Real</h3>
-                    <p>Descargando datos del reloj...</p>
-                    <span>${data.stats.distance} MB / Unidades procesadas</span>
-                </div>
-                </div >
-                ` + activitiesList.innerHTML;
-        }
+        log("Renderizando actividad real en la lista...", "system");
+
+        // Limpiar el mensaje de "No hay actividades"
+        const emptyMsg = activityList.querySelector('.empty-msg');
+        if (emptyMsg) emptyMsg.remove();
+
+        const item = document.createElement('div');
+        item.className = 'activity-item real-sync';
+        item.innerHTML = `
+            <div class="activity-info">
+                <h4>Actividad Sincronizada</h4>
+                <span>${new Date().toLocaleTimeString()} • ${data.stats.distance} km</span>
+            </div>
+            <span class="arrow">→</span>
+        `;
+        item.onclick = () => {
+            // Mostrar los datos reales en la vista de estadísticas
+            document.getElementById('stat-dist').innerText = data.stats.distance + ' km';
+            document.getElementById('stat-time').innerText = data.stats.duration;
+            document.getElementById('stat-cal').innerText = data.stats.calories + ' kcal';
+            document.getElementById('stat-hr').innerText = data.stats.avgHeartRate + ' bpm';
+
+            activitySection.classList.add('hidden');
+            statsSection.classList.remove('hidden');
+
+            // Renderizar mapa
+            window.sportMap.init();
+            window.sportMap.renderRoute(data.points);
+        };
+
+        // Insertar al principio de la lista
+        activityList.insertBefore(item, activityList.firstChild);
+        log("¡Actividad real añadida con éxito!", "system");
     }
 
     closeStatsBtn.addEventListener('click', () => {
@@ -234,10 +254,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = document.createElement('div');
             item.className = 'activity-item';
             item.innerHTML = `
-            < div class= "activity-info" >
+            <div class="activity-info">
                     <h4>${act.type}</h4>
                     <span>${act.date} • ${act.dist}</span>
-                </div >
+                </div>
                 <span class="arrow">→</span>
             `;
             item.onclick = () => showActivityDetail(act);

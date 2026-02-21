@@ -358,6 +358,9 @@ class AmazfitDevice {
                 setTimeout(() => this._sendSyncAck(new Uint8Array([0x01])), 50);
                 return;
             }
+
+            // Cualquier otro paquete de control no se acumula
+            return;
         }
 
         // Cabecera v2 detectada
@@ -365,9 +368,10 @@ class AmazfitDevice {
             const lastByte = data[14];
             this.log(`Cabecera v2 detectada (Index: ${lastByte}). Iniciando transferencia...`, "ble");
             this._sendSyncAck(new Uint8Array([0x02, lastByte]));
+            return; // No acumulamos la cabecera en el buffer de datos
         }
 
-        // ACUMULACIÓN ULTRA-RÁPIDA
+        // ACUMULACIÓN ULTRA-RÁPIDA (Solo datos reales)
         this.activityChunks.push(data);
         const oldTotal = this.totalReceived;
         this.totalReceived += data.length;
