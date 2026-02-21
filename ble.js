@@ -329,40 +329,42 @@ class AmazfitDevice {
                     this._retryWithExtendedCommand();
                     return;
                 } else if (status === 0x01) {
-                    this.log("Handshake inicial OK (10 01 01). Solicitando volcado...", "ble");
-                    this._sendSyncAck(0x02);
+                    this.log("Handshake inicial OK (10 01 01).", "ble");
+                    // No hacemos nada, esperamos a ver si llega la cabecera de 15 bytes
                     return;
                 }
             }
 
             if (cmdReply === 0x03 && status === 0x01) {
-                this.log("Puerta 0x03 abierta. Enviando comando de disparo final (0x05)...", "ble");
-                this._sendSyncAck(0x05);
+                this.log("Puerta 0x03 abierta. Probando disparo con 0x05...", "ble");
+                this._sendSyncAck(new Uint8Array([0x05]));
                 return;
             }
 
             if (cmdReply === 0x02 && status === 0x04) {
-                this.log("ACK 0x02 rechazado (Status 04). Probando ACK alternativo 0x03...", "error");
-                this._sendSyncAck(0x03);
+                this.log("ACK 0x02 rechazado (Status 04). Probando ACK 0x03 (Prepare)...", "error");
+                this._sendSyncAck(new Uint8Array([0x03]));
                 return;
             }
 
-            if (cmdReply === 0x03 && status === 0x04) {
-                this.log("ACK 0x03 rechazado. Probando comando final 0x05 (v3)...", "error");
-                this._sendSyncAck(0x05);
+            if (cmdReply === 0x05 && status === 0x02) {
+                this.log("Disparo 0x05 rechazado (Status 02). Probando comando final 0x01 (Start)...", "error");
+                this._sendSyncAck(new Uint8Array([0x01]));
                 return;
             }
 
-            if (cmdReply === 0x05 && status === 0x01) {
-                this.log("¡Handshake completo! El reloj debería empezar a volcar bloques ahora.", "system");
+            if (cmdReply === 0x01 && status === 0x01 && this.activityBuffer.length > 3) {
+                this.log("¡Handshake finalizado! Esperando flujo de datos...", "system");
                 return;
             }
         }
 
         // Si recibimos exactamente 15 bytes (Cabecera v2)
         if (data.length === 15 && data[0] === 0x10 && data[1] === 0x01) {
-            this.log("Cabecera de actividades v2 detectada. Iniciando flujo...", "ble");
-            this._sendSyncAck(0x02);
+            const lastByte = data[14]; // Posible índice de actividad
+            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Enviando ACK indexado...`, "ble");
+            // Probamos el ACK con el índice enviado por el reloj
+            this._sendSyncAck(new Uint8Array([0x02, lastByte]));
         }
 
         // Acumular datos
@@ -403,12 +405,15 @@ class AmazfitDevice {
         }
     }
 
-    async _sendSyncAck(cmdValue = 0x02) {
-        this.log(`Enviando comando de volcado (0x${cmdValue.toString(16).padStart(2, '0')})...`, "ble");
+    async _sendSyncAck(ackCmd) {
+        if (!(ackCmd instanceof Uint8Array)) {
+            ackCmd = new Uint8Array([ackCmd]);
+        }
+
+        const hexCmd = Array.from(ackCmd).map(b => b.toString(16).padStart(2, '0')).join(' ');
+        this.log(`Enviando comando de volcado: [${hexCmd}]...`, "ble");
 
         try {
-            const ackCmd = new Uint8Array([cmdValue]);
-            // Probamos primero el canal que funcionó antes, pero si falla, probamos el otro
             const charsToTry = [this.lastWorkingChar, this.fetchControlChar, this.fetchDataChar].filter(c => c !== null);
 
             let ackSuccess = false;
@@ -427,7 +432,7 @@ class AmazfitDevice {
             }
 
             if (ackSuccess) {
-                this.log(`Comando 0x${cmdValue.toString(16).padStart(2, '0')} enviado.`, "system");
+                this.log(`Comando [${hexCmd}] enviado.`, "system");
             } else {
                 throw new Error("No se pudo enviar el ACK a ninguna característica.");
             }
