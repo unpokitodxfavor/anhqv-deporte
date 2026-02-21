@@ -334,10 +334,15 @@ class AmazfitDevice {
                 if (this.totalReceived === 0) {
                     this.log("Handshake inicial OK (10 01 01).", "ble");
                 } else if (this.totalReceived > 1000) {
-                    // Si llega un 10 01 01 después de muchos datos, es el fin real
                     this.log("¡Señal de finalización detectada!", "system");
                     this._finalizeSync();
                 }
+                return;
+            }
+
+            if (cmdReply === 0x01 && status === 0x02) {
+                this.log("Rechazo 0x01. Iniciando modo de compatibilidad (Full Sync)...", "error");
+                this._retryWithExtendedCommand();
                 return;
             }
 
@@ -404,16 +409,15 @@ class AmazfitDevice {
         if (this.syncTimeout) clearTimeout(this.syncTimeout);
         this.syncTimeout = null;
 
-        if (this.totalReceived === 0) return;
-
-        this.log("Finalizando captura. Reconstruyendo buffer final...", "system");
-
         // Reconstrucción única y final (O(n))
         const fullBuffer = new Uint8Array(this.totalReceived);
-        let offset = 0;
-        for (const chunk of this.activityChunks) {
-            fullBuffer.set(chunk, offset);
-            offset += chunk.length;
+        if (this.totalReceived > 0) {
+            this.log(`Finalizando captura. Reconstruyendo ${this.totalReceived} bytes...`, "system");
+            let offset = 0;
+            for (const chunk of this.activityChunks) {
+                fullBuffer.set(chunk, offset);
+                offset += chunk.length;
+            }
         }
 
         this.activityBuffer = fullBuffer;
