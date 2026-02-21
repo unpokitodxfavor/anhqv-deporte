@@ -141,30 +141,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Escuchar datos reales del reloj
-    window.addEventListener('amazfit-data', (event) => {
-        const { chunk, fullBuffer } = event.detail;
-
-        // Si el paquete es de estado (3 bytes), no actualizamos el contador de descarga
-        if (chunk.length === 3 && chunk[0] === 0x01) {
-            if (chunk[2] === 0x08) {
-                hideLoading();
-                alert("No hay actividades nuevas en el reloj.");
-                return;
-            }
-        }
-
-        // Actualizar UI del loader con el progreso (bytes recibidos)
+    // Escuchar progreso de descarga (ligero)
+    window.addEventListener('amazfit-progress', (event) => {
+        const { received } = event.detail;
         const loadingText = document.getElementById('loading-text');
         if (loadingText) {
-            loadingText.innerText = `Descargando: ${fullBuffer.length} bytes recibidos...`;
+            loadingText.innerText = `Descargando: ${(received / 1024).toFixed(1)} KB recibidos...`;
+        }
+    });
+
+    // Escuchar finalización de descarga o datos de control
+    window.addEventListener('amazfit-data', (event) => {
+        const { chunk, fullBuffer, complete } = event.detail;
+
+        if (chunk && chunk.length === 3 && chunk[0] === 0x10) {
+            // Manejar posibles estados intermedios si fuera necesario
+            return;
         }
 
-        // Si tenemos un buffer considerable o ha pasado un tiempo, parseamos
-        if (fullBuffer.length > 50) {
-            const parsedData = ActivityParser.parse(fullBuffer.buffer);
+        if (complete) {
+            hideLoading();
+            log(`Descarga finalizada: ${fullBuffer.byteLength} bytes.`, "system");
+            const parsedData = ActivityParser.parse(fullBuffer);
             if (parsedData.isRealData) {
-                // Actualizar la lista de actividades con el "progreso"
                 renderRealActivityProgress(parsedData);
             }
         }
@@ -176,13 +175,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (activitiesList && !document.getElementById('real-sync-item')) {
             activitiesList.innerHTML = `
                 <div class="activity-card" id="real-sync-item">
-                    <div class="activity-info">
-                        <h3>Sincronización Real</h3>
-                        <p>Descargando datos del reloj...</p>
-                        <span>${data.stats.distance} MB / Unidades procesadas</span>
-                    </div>
+                <div class="activity-info">
+                    <h3>Sincronización Real</h3>
+                    <p>Descargando datos del reloj...</p>
+                    <span>${data.stats.distance} MB / Unidades procesadas</span>
                 </div>
-            ` + activitiesList.innerHTML;
+                </div >
+                ` + activitiesList.innerHTML;
         }
     }
 
@@ -195,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateStatus(online, text) {
         statusDot.classList.toggle('online', online);
-        statusText.innerHTML = `<span class="dot ${online ? 'online' : ''}"></span> ${online ? text : 'Desconectado'}`;
+        statusText.innerHTML = `< span class= "dot ${online ? 'online' : ''}" ></span > ${online ? text : 'Desconectado'}`;
     }
 
     function showLoading(text) {
@@ -235,10 +234,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const item = document.createElement('div');
             item.className = 'activity-item';
             item.innerHTML = `
-                <div class="activity-info">
+            < div class= "activity-info" >
                     <h4>${act.type}</h4>
                     <span>${act.date} • ${act.dist}</span>
-                </div>
+                </div >
                 <span class="arrow">→</span>
             `;
             item.onclick = () => showActivityDetail(act);

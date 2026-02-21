@@ -317,9 +317,7 @@ class AmazfitDevice {
     _handleActivityData(event) {
         const data = new Uint8Array(event.target.value.buffer);
 
-        // Optimización: No convertir a HEX ni loguear cada paquete pequeño de datos
-        // Solo logueamos si es una respuesta de control (empieza por 0x10 y es corta) 
-        // o si es el inicio de una cabecera.
+        // Detección de tipos de paquetes sin loguear datos brutos (Velocidad Crítica)
         const isControl = data.length <= 3 && data[0] === 0x10;
         const isHeader = data.length === 15 && data[0] === 0x10;
 
@@ -328,52 +326,41 @@ class AmazfitDevice {
             this.log(`Control: [${hex}] (${data.length} bytes)`, "ble");
         }
 
-        // Respuesta de estado Huami (3 bytes) -> Formato: [10, CMD, STATUS]
         if (isControl) {
             const cmdReply = data[1];
             const status = data[2];
 
-            if (cmdReply === 0x01) { // Respuesta al comando Fetch
-                if (status === 0x08) {
-                    this.log("El reloj informa: No hay actividades nuevas.", "system");
-                    window.dispatchEvent(new CustomEvent('amazfit-status', { detail: { code: 'empty' } }));
-                    return;
-                } else if (status === 0x02) {
-                    this.log("Orden rechazada (01->02). Probando modo extendido...", "error");
-                    this._retryWithExtendedCommand();
-                    return;
-                } else if (status === 0x01) {
+            if (cmdReply === 0x01 && status === 0x01) {
+                if (this.totalReceived === 0) {
                     this.log("Handshake inicial OK (10 01 01).", "ble");
-                    return;
+                } else if (this.totalReceived > 100) {
+                    this.log("¡Señal de fin de lote detectada!", "system");
+                    this._finalizeSync();
                 }
+                return;
             }
 
             if (cmdReply === 0x03 && status === 0x01) {
                 this.log("Puerta 0x03 abierta. Probando disparo con 0x05...", "ble");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x05])), 500);
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x05])), 100);
                 return;
             }
 
             if (cmdReply === 0x05 && status === 0x02) {
-                this.log("Disparo 0x05 rechazado (02). Probando comando 0x04 (Transfer Confirm)...", "error");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x04])), 500);
+                this.log("Disparo 0x05 rechazado (02). Probando comando 0x04...", "error");
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x04])), 100);
                 return;
             }
 
             if (cmdReply === 0x04 && status === 0x02) {
                 this.log("Comando 0x04 rechazado. Probando 0x01 (Start Data)...", "error");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x01])), 500);
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x01])), 100);
                 return;
             }
 
             if (cmdReply === 0x02 && status === 0x04) {
-                this.log("ACK 0x02 rechazado (Status 04). Probando ACK 0x03 (Prepare)...", "error");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x03])), 500);
-                return;
-            }
-
-            if (cmdReply === 0x01 && status === 0x01 && this.totalReceived > 5) {
-                this.log("¡Handshake finalizado con éxito! Descargando datos...", "system");
+                this.log("ACK 0x02 rechazado (Status 04). Probando ACK 0x03...", "error");
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x03])), 100);
                 return;
             }
         }
@@ -381,42 +368,57 @@ class AmazfitDevice {
         // Cabecera v2 detectada
         if (isHeader && data[1] === 0x01) {
             const lastByte = data[14];
-            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Enviando ACK indexado...`, "ble");
+            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Enviando ACK...`, "ble");
             this._sendSyncAck(new Uint8Array([0x02, lastByte]));
         }
 
-        // ACUMULACIÓN OPTIMIZADA: Usar array de chunks (O(1))
+        // ACUMULACIÓN ULTRA-RÁPIDA (Zero Copy / Zero Allocation merge avoid)
         this.activityChunks.push(data);
         this.totalReceived += data.length;
 
-        // Throttling de la UI: Actualizar cada 200ms o si es un paquete de control
+        // Throttling de la UI y Detección de Inactividad
+        if (this.syncTimeout) clearTimeout(this.syncTimeout);
+        this.syncTimeout = setTimeout(() => this._finalizeSync(), 2500);
+
         const now = Date.now();
-        if (now - this.lastUiUpdate > 200 || isControl || isHeader) {
+        if (now - this.lastUiUpdate > 300) {
             this.lastUiUpdate = now;
-
-            // Reconstruir el buffer solo para el evento (o enviar solo el tamaño)
-            // Para no romper la compatibilidad con app.js, reconstruimos aquí
-            const fullBuffer = new Uint8Array(this.totalReceived);
-            let offset = 0;
-            for (const chunk of this.activityChunks) {
-                fullBuffer.set(chunk, offset);
-                offset += chunk.length;
-            }
-            this.activityBuffer = fullBuffer;
-
-            window.dispatchEvent(new CustomEvent('amazfit-data', {
-                detail: {
-                    chunk: data,
-                    fullBuffer: this.activityBuffer,
-                    received: this.totalReceived
-                }
+            window.dispatchEvent(new CustomEvent('amazfit-progress', {
+                detail: { received: this.totalReceived }
             }));
 
-            // Log de progreso cada ~2KB
-            if (this.totalReceived % 2048 < 20) {
-                this.log(`Descargado: ${this.totalReceived} bytes...`, "system");
+            // Log cada 10KB para no saturar el DOM
+            if (Math.floor(this.totalReceived / 10240) > Math.floor((this.totalReceived - data.length) / 10240)) {
+                this.log(`Descargado: ${Math.floor(this.totalReceived / 1024)} KB...`, "system");
             }
         }
+    }
+
+    _finalizeSync() {
+        if (this.syncTimeout) clearTimeout(this.syncTimeout);
+        this.syncTimeout = null;
+
+        if (this.totalReceived === 0) return;
+
+        this.log("Finalizando captura. Reconstruyendo buffer final...", "system");
+
+        // Reconstrucción única y final (O(n))
+        const fullBuffer = new Uint8Array(this.totalReceived);
+        let offset = 0;
+        for (const chunk of this.activityChunks) {
+            fullBuffer.set(chunk, offset);
+            offset += chunk.length;
+        }
+
+        this.activityBuffer = fullBuffer;
+        this.activityChunks = []; // Liberar memoria
+
+        window.dispatchEvent(new CustomEvent('amazfit-data', {
+            detail: {
+                fullBuffer: this.activityBuffer,
+                complete: true
+            }
+        }));
     }
 
     async _retryWithExtendedCommand() {
