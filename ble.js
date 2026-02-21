@@ -7,6 +7,8 @@ const HUAMI_SERVICE_ID = '0000fee0-0000-1000-8000-00805f9b34fb';
 const AUTH_CHAR_ID = '00000009-0000-3512-2118-0009af100700';
 const FETCH_CONTROL_ID = '00000005-0000-3512-2118-0009af100700';
 const FETCH_DATA_ID = '00000004-0000-3512-2118-0009af100700';
+const TIME_SERVICE_ID = '00001805-0000-1000-8000-00805f9b34fb';
+const TIME_CHAR_ID = '00002a2b-0000-1000-8000-00805f9b34fb';
 
 class AmazfitDevice {
     constructor() {
@@ -16,7 +18,8 @@ class AmazfitDevice {
         this.authChar = null;
         this.fetchControlChar = null;
         this.fetchDataChar = null;
-        this.lastWorkingChar = null; // Guardará el canal que acepte escrituras
+        this.timeChar = null;
+        this.lastWorkingChar = null;
         this.authKey = null; // 16 bytes ArrayBuffer
         this.authenticated = false;
         this.activityBuffer = new Uint8Array(0);
@@ -55,7 +58,7 @@ class AmazfitDevice {
                     { namePrefix: 'Amazfit' },
                     { namePrefix: 'Bip' }
                 ],
-                optionalServices: [HUAMI_SERVICE_ID, '0000fee1-0000-1000-8000-00805f9b34fb']
+                optionalServices: [HUAMI_SERVICE_ID, TIME_SERVICE_ID, '0000fee1-0000-1000-8000-00805f9b34fb']
             });
         } catch (bleErr) {
             this.log(`Error al buscar dispositivo: ${bleErr.message}`, "error");
@@ -113,9 +116,21 @@ class AmazfitDevice {
             this.log("AVISO: No se encontró FetchChar. El sync no funcionará.", "error");
         }
 
+        try {
+            const timeService = await this.server.getPrimaryService(TIME_SERVICE_ID);
+            this.timeChar = await timeService.getCharacteristic(TIME_CHAR_ID);
+            this.log("Servicio de Hora localizado.", "ble");
+        } catch (e) {
+            this.log("Aviso: El reloj no expone el servicio de hora estándar.", "system");
+        }
+
         // Iniciar Handshake
         await this._authenticate();
         this.authenticated = true;
+
+        if (this.timeChar) {
+            await this._syncTime();
+        }
 
         // Guardar ID para auto-reconexión (si el navegador lo soporta)
         if (this.device.id) {
@@ -247,14 +262,15 @@ class AmazfitDevice {
         this.totalReceived = 0;
         this.lastUiUpdate = 0;
 
-        // Iniciar Watchdog de seguridad (10 segundos para recibir el primer paquete)
+        // Iniciar Watchdog de seguridad (12 segundos para recibir el primer paquete)
         if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
         this.syncWatchdog = setTimeout(() => {
             if (this.totalReceived === 0) {
-                this.log("Sincronización fallida por tiempo de espera. El reloj no respondió al comando.", "error");
+                this.log("Sincronización fallida por tiempo de espera. Reintentando con Autorización Forzada...", "error");
+                this._forceAuthorizeFetch();
                 this._finalizeSync();
             }
-        }, 10000);
+        }, 12000);
 
         if (!this.fetchControlChar) {
             throw new Error("Característica de control no encontrada. El sync no es posible.");
@@ -356,6 +372,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
+            const APP_VERSION = "1.2.2";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -504,6 +521,40 @@ class AmazfitDevice {
         } catch (err) {
             // Silencioso durante el sync para no frenar el proceso
             if (this.totalReceived === 0) console.error("Error ACK:", err.message);
+        }
+    }
+
+    async _forceAuthorizeFetch() {
+        this.log("Enviando comando de Autorización Forzada (11-bytes)...", "system");
+        try {
+            // 0x01 0x01 + 9 bytes de ceros = "Prepare and Fetch Everything"
+            const authFetch = new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+            await this.fetchControlChar.writeValue(authFetch);
+        } catch (e) {
+            this.log("Error en Autorización Forzada.", "error");
+        }
+    }
+
+    async _syncTime() {
+        if (!this.timeChar) return;
+        this.log("Sincronizando hora para autorizar actividades...", "system");
+        try {
+            const now = new Date();
+            const year = now.getFullYear();
+            const timePacket = new Uint8Array([
+                year & 0xFF, (year >> 8) & 0xFF,
+                now.getMonth() + 1,
+                now.getDate(),
+                now.getHours(),
+                now.getMinutes(),
+                now.getSeconds(),
+                (now.getDay() === 0 ? 7 : now.getDay()),
+                0, 1
+            ]);
+            await this.timeChar.writeValue(timePacket);
+            this.log("¡Hora sincronizada con éxito!", "system");
+        } catch (err) {
+            this.log(`Error de hora: ${err.message}`, "error");
         }
     }
 

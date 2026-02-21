@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.2.1";
+    const APP_VERSION = "1.2.2";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -132,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     refreshBtn.addEventListener('click', async () => {
-        showLoading('Sincronizando (Patch v1.2.1)...');
+        showLoading('Sincronizando (Patch v1.2.2)...');
 
         // Safety hatch: Force hide loading after 15 seconds if sync hangs
         const safetyHatch = setTimeout(() => {
@@ -169,13 +169,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (complete) {
-            hideLoading();
-            log(`Descarga finalizada: ${fullBuffer.byteLength} bytes.`, "system");
-            const parsedData = ActivityParser.parse(fullBuffer.buffer);
-            if (parsedData.isRealData) {
-                renderRealActivityProgress(parsedData);
-            }
+        const parsedData = ActivityParser.parse(fullBuffer.buffer);
+        if (parsedData.isRealData) {
+            renderRealActivityProgress(parsedData);
         }
     });
 
