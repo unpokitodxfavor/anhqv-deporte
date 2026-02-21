@@ -357,7 +357,6 @@ class AmazfitDevice {
 
         if (isControl) {
             const cmdReply = data[1];
-            const APP_VERSION = "1.2.1";
             const status = data[2];
 
             if (cmdReply === 0x01 && status === 0x01) {
