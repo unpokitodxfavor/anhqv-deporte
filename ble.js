@@ -315,28 +315,43 @@ class AmazfitDevice {
         this.log(`Bytes: [${hex}] (${data.length} bytes)`, "ble");
 
         // Respuesta de estado Huami (3 bytes) -> Formato: [10, CMD, STATUS]
-        if (data.length === 3 && data[0] === 0x10 && data[1] === 0x01) {
+        if (data.length === 3 && data[0] === 0x10) {
+            const cmdReply = data[1];
             const status = data[2];
-            if (status === 0x08) {
-                this.log("El reloj informa: No hay actividades nuevas.", "system");
-                window.dispatchEvent(new CustomEvent('amazfit-status', { detail: { code: 'empty' } }));
+
+            if (cmdReply === 0x01) { // Respuesta al comando Fetch
+                if (status === 0x08) {
+                    this.log("El reloj informa: No hay actividades nuevas.", "system");
+                    window.dispatchEvent(new CustomEvent('amazfit-status', { detail: { code: 'empty' } }));
+                    return;
+                } else if (status === 0x02) {
+                    this.log("Orden rechazada (01->02). Probando modo extendido...", "error");
+                    this._retryWithExtendedCommand();
+                    return;
+                } else if (status === 0x01) {
+                    this.log("Handshake inicial OK (10 01 01). Solicitando volcado...", "ble");
+                    this._sendSyncAck(0x02);
+                    return;
+                }
+            }
+
+            if (cmdReply === 0x02 && status === 0x04) {
+                this.log("ACK 0x02 rechazado (Status 04). Probando ACK alternativo 0x03...", "error");
+                this._sendSyncAck(0x03);
                 return;
-            } else if (status === 0x02) {
-                this.log("Orden rechazada (02). Probando modo extendido...", "error");
-                this._retryWithExtendedCommand();
-                return;
-            } else if (status === 0x01) {
-                this.log("Handshake OK. Solicitando inicio de volcado (ACK)...", "ble");
-                this._sendSyncAck();
+            }
+
+            if (cmdReply === 0x03 && status === 0x04) {
+                this.log("ACK 0x03 rechazado. Probando comando final 0x05 (v3)...", "error");
+                this._sendSyncAck(0x05);
                 return;
             }
         }
 
-        // Si recibimos exactamente 15 bytes, suele ser el descriptor de actividades (v2)
-        // Algunos relojes esperan un ACK aquí para soltar el chorro de datos.
-        if (data.length === 15 && data[0] === 0x10 && data[1] === 0x01 && data[2] === 0x01) {
-            this.log("Cabecera de actividades detectada. Enviando confirmación (ACK)...", "ble");
-            this._sendSyncAck();
+        // Si recibimos exactamente 15 bytes (Cabecera v2)
+        if (data.length === 15 && data[0] === 0x10 && data[1] === 0x01) {
+            this.log("Cabecera de actividades v2 detectada. Iniciando flujo...", "ble");
+            this._sendSyncAck(0x02);
         }
 
         // Acumular datos
@@ -377,20 +392,36 @@ class AmazfitDevice {
         }
     }
 
-    async _sendSyncAck() {
-        this.log("Enviando ACK de inicio de volcado...", "ble");
-        try {
-            const ackCmd = new Uint8Array([0x02]);
-            const char = this.lastWorkingChar || this.fetchControlChar;
+    async _sendSyncAck(cmdValue = 0x02) {
+        this.log(`Enviando comando de volcado (0x${cmdValue.toString(16).padStart(2, '0')})...`, "ble");
 
-            try {
-                await char.writeValue(ackCmd);
-            } catch (e) {
-                await char.writeValueWithoutResponse(ackCmd);
+        try {
+            const ackCmd = new Uint8Array([cmdValue]);
+            // Probamos primero el canal que funcionó antes, pero si falla, probamos el otro
+            const charsToTry = [this.lastWorkingChar, this.fetchControlChar, this.fetchDataChar].filter(c => c !== null);
+
+            let ackSuccess = false;
+            for (const char of charsToTry) {
+                try {
+                    await char.writeValue(ackCmd);
+                    ackSuccess = true;
+                    break;
+                } catch (e) {
+                    try {
+                        await char.writeValueWithoutResponse(ackCmd);
+                        ackSuccess = true;
+                        break;
+                    } catch (e2) { }
+                }
             }
-            this.log("ACK enviado. El reloj debería empezar a transmitir datos masivos.", "system");
+
+            if (ackSuccess) {
+                this.log(`Comando 0x${cmdValue.toString(16).padStart(2, '0')} enviado.`, "system");
+            } else {
+                throw new Error("No se pudo enviar el ACK a ninguna característica.");
+            }
         } catch (err) {
-            this.log(`Fallo al enviar ACK: ${err.message}`, "error");
+            this.log(`Error al enviar confirmación: ${err.message}`, "error");
         }
     }
 
