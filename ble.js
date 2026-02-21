@@ -285,52 +285,43 @@ class AmazfitDevice {
                 } catch (e) { }
             }
 
-            this.log("Vanguard Extreme: Ping de Auth para calentar enlace...", "ble");
+            this.log("Patch 1.2.1: Ping de Auth para calentar enlace...", "ble");
             try {
                 await this.authChar.readValue();
-                this.log("¡Ping OK! Enlace GATT activo.", "ble");
-            } catch (e) {
-                this.log("Ping fallido, pero continuamos...", "ble");
-            }
+                this.log("¡Ping OK!", "ble");
+            } catch (e) { }
 
             const forceWrite = async (data, label) => {
                 const chars = [this.fetchControlChar, this.fetchDataChar].filter((c, i, a) => c && a.indexOf(c) === i);
-                let writeSuccess = false;
-
                 for (const char of chars) {
                     try {
-                        this.log(`Double-Tap: Enviando [${label}] a ${char.uuid.slice(-4)}...`, "ble");
+                        this.log(`Enviando [${label}] a ${char.uuid.slice(-4)}...`, "ble");
                         await char.writeValue(data);
-                        await new Promise(r => setTimeout(r, 100));
-                        await char.writeValue(data); // Segundo toque
-                        writeSuccess = true;
+                        return true;
                     } catch (e) {
                         try {
-                            this.log(`Double-Tap Fallback WithoutResponse en ${char.uuid.slice(-4)}...`, "ble");
+                            this.log(`Fallback WithoutResponse en ${char.uuid.slice(-4)}...`, "ble");
                             await char.writeValueWithoutResponse(data);
-                            await new Promise(r => setTimeout(r, 100));
-                            await char.writeValueWithoutResponse(data);
-                            writeSuccess = true;
+                            return true;
                         } catch (e2) {
                             this.log(`Fallo en ${char.uuid.slice(-4)}: ${e2.message}`, "error");
                         }
                     }
                 }
-                return writeSuccess;
+                return false;
             };
 
-            this.log("Fase 1: RESET (Double-Tap)...", "ble");
+            this.log("Fase 1: RESET...", "ble");
             await forceWrite(new Uint8Array([0x01, 0x00]), "RESET");
-            await new Promise(r => setTimeout(r, 1200));
+            await new Promise(r => setTimeout(r, 2000));
 
             this.log("Fase 2: Warmup (01 02)...", "ble");
             await forceWrite(new Uint8Array([0x01, 0x02]), "WARMUP");
-            await new Promise(r => setTimeout(r, 1200));
+            await new Promise(r => setTimeout(r, 2000));
 
             const variants = [
                 { name: "Standard (2-bytes)", cmd: new Uint8Array([0x01, 0x01]) },
-                { name: "Mock TS (4-bytes)", cmd: new Uint8Array([0x01, 0x01, 0xE0, 0x07, 0x01, 0x01]) }, // 2016-01-01 mock
-                { name: "Full Sync 2024 (10-bytes)", cmd: new Uint8Array([0x01, 0x01, 0xE8, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]) } // 2024 mock
+                { name: "Full Sync 2024 (10-bytes)", cmd: new Uint8Array([0x01, 0x01, 0xE8, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]) }
             ];
 
             let success = false;
@@ -341,10 +332,10 @@ class AmazfitDevice {
             }
 
             if (!success) {
-                throw new Error("El reloj rechazó todas las variantes Extreme Recovery.");
+                throw new Error("El reloj rechazó todas las variantes del Patch 1.2.1.");
             }
 
-            this.log("Extreme Recovery completado. Esperando flujo de datos...", "system");
+            this.log("Patch completado. Esperando flujo de datos...", "system");
         } catch (err) {
             this.log(`ERROR crítico de sincronización: ${err.message}`, "error");
             this.log("TIP: Reinicia el Bluetooth y cierra Zepp/Notify de fondo.", "system");
@@ -366,7 +357,7 @@ class AmazfitDevice {
 
         if (isControl) {
             const cmdReply = data[1];
-            const APP_VERSION = "1.2.0";
+            const APP_VERSION = "1.2.1";
             const status = data[2];
 
             if (cmdReply === 0x01 && status === 0x01) {
