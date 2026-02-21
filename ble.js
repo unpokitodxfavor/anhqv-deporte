@@ -337,24 +337,30 @@ class AmazfitDevice {
 
             if (cmdReply === 0x03 && status === 0x01) {
                 this.log("Puerta 0x03 abierta. Probando disparo con 0x05...", "ble");
-                this._sendSyncAck(new Uint8Array([0x05]));
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x05])), 500);
+                return;
+            }
+
+            if (cmdReply === 0x05 && status === 0x02) {
+                this.log("Disparo 0x05 rechazado (02). Probando comando 0x04 (Transfer Confirm)...", "error");
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x04])), 500);
+                return;
+            }
+
+            if (cmdReply === 0x04 && status === 0x02) {
+                this.log("Comando 0x04 rechazado. Probando 0x01 (Start Data)...", "error");
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x01])), 500);
                 return;
             }
 
             if (cmdReply === 0x02 && status === 0x04) {
                 this.log("ACK 0x02 rechazado (Status 04). Probando ACK 0x03 (Prepare)...", "error");
-                this._sendSyncAck(new Uint8Array([0x03]));
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x03])), 500);
                 return;
             }
 
-            if (cmdReply === 0x05 && status === 0x02) {
-                this.log("Disparo 0x05 rechazado (Status 02). Probando comando final 0x01 (Start)...", "error");
-                this._sendSyncAck(new Uint8Array([0x01]));
-                return;
-            }
-
-            if (cmdReply === 0x01 && status === 0x01 && this.activityBuffer.length > 3) {
-                this.log("¡Handshake finalizado! Esperando flujo de datos...", "system");
+            if (cmdReply === 0x01 && status === 0x01 && this.activityBuffer.length > 5) {
+                this.log("¡Handshake finalizado con éxito! El flujo de datos debería comenzar.", "system");
                 return;
             }
         }
