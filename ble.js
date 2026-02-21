@@ -312,28 +312,31 @@ class AmazfitDevice {
         const data = new Uint8Array(event.target.value.buffer);
         const hex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
 
-        this.log(`Paquete recibido: ${data.length} bytes [${hex}]`, "ble");
+        this.log(`Bytes: [${hex}] (${data.length} bytes)`, "ble");
 
         // Respuesta de estado Huami (3 bytes) -> Formato: [10, CMD, STATUS]
-        // 0x10 (16 decimal) es el prefijo de respuesta.
-        if (data.length === 3 && data[0] === 0x10) {
-            const cmdId = data[1];
+        if (data.length === 3 && data[0] === 0x10 && data[1] === 0x01) {
             const status = data[2];
-
-            if (cmdId === 0x01) { // Respuesta al comando de Fetch (0x01)
-                if (status === 0x08) {
-                    this.log("El reloj informa: No hay nuevas actividades para sincronizar.", "system");
-                    window.dispatchEvent(new CustomEvent('amazfit-status', { detail: { code: 'empty' } }));
-                    return;
-                } else if (status === 0x02) {
-                    this.log("El reloj ha rechazado la orden (Error 0x02). Reintentando con comando extendido...", "error");
-                    this._retryWithExtendedCommand(); // This method needs to be defined
-                    return;
-                } else if (status === 0x01) {
-                    this.log("Handshake de sync correcto (01-OK). Esperando flujo de datos...", "ble");
-                    return;
-                }
+            if (status === 0x08) {
+                this.log("El reloj informa: No hay actividades nuevas.", "system");
+                window.dispatchEvent(new CustomEvent('amazfit-status', { detail: { code: 'empty' } }));
+                return;
+            } else if (status === 0x02) {
+                this.log("Orden rechazada (02). Probando modo extendido...", "error");
+                this._retryWithExtendedCommand();
+                return;
+            } else if (status === 0x01) {
+                this.log("Handshake OK. Solicitando inicio de volcado (ACK)...", "ble");
+                this._sendSyncAck();
+                return;
             }
+        }
+
+        // Si recibimos exactamente 15 bytes, suele ser el descriptor de actividades (v2)
+        // Algunos relojes esperan un ACK aquí para soltar el chorro de datos.
+        if (data.length === 15 && data[0] === 0x10 && data[1] === 0x01 && data[2] === 0x01) {
+            this.log("Cabecera de actividades detectada. Enviando confirmación (ACK)...", "ble");
+            this._sendSyncAck();
         }
 
         // Acumular datos
@@ -371,6 +374,23 @@ class AmazfitDevice {
             this.log("Comando extendido enviado con éxito.", "ble");
         } catch (err) {
             this.log(`Fallo crítico en reintento: ${err.message}`, "error");
+        }
+    }
+
+    async _sendSyncAck() {
+        this.log("Enviando ACK de inicio de volcado...", "ble");
+        try {
+            const ackCmd = new Uint8Array([0x02]);
+            const char = this.lastWorkingChar || this.fetchControlChar;
+
+            try {
+                await char.writeValue(ackCmd);
+            } catch (e) {
+                await char.writeValueWithoutResponse(ackCmd);
+            }
+            this.log("ACK enviado. El reloj debería empezar a transmitir datos masivos.", "system");
+        } catch (err) {
+            this.log(`Fallo al enviar ACK: ${err.message}`, "error");
         }
     }
 
