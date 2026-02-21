@@ -162,16 +162,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Escuchar finalización de descarga o datos de control
     window.addEventListener('amazfit-data', (event) => {
-        const { chunk, fullBuffer, complete } = event.detail;
+        const { fullBuffer, complete } = event.detail;
 
-        if (chunk && chunk.length === 3 && chunk[0] === 0x10) {
-            // Manejar posibles estados intermedios si fuera necesario
-            return;
-        }
+        if (complete) {
+            hideLoading();
+            log(`Descarga finalizada: ${fullBuffer.byteLength} bytes.`, "system");
 
-        const parsedData = ActivityParser.parse(fullBuffer.buffer);
-        if (parsedData.isRealData) {
-            renderRealActivityProgress(parsedData);
+            const parsedData = ActivityParser.parse(fullBuffer.buffer);
+            if (parsedData.isRealData) {
+                renderRealActivityProgress(parsedData);
+            }
         }
     });
 
