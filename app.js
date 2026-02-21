@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.0.7";
+    const APP_VERSION = "1.1.3";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -162,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (complete) {
             hideLoading();
             log(`Descarga finalizada: ${fullBuffer.byteLength} bytes.`, "system");
-            const parsedData = ActivityParser.parse(fullBuffer);
+            const parsedData = ActivityParser.parse(fullBuffer.buffer);
             if (parsedData.isRealData) {
                 renderRealActivityProgress(parsedData);
             }
@@ -194,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateStatus(online, text) {
         statusDot.classList.toggle('online', online);
-        statusText.innerHTML = `< span class= "dot ${online ? 'online' : ''}" ></span > ${online ? text : 'Desconectado'}`;
+        statusText.innerHTML = `<span class="dot ${online ? 'online' : ''}"></span> ${online ? text : 'Desconectado'}`;
     }
 
     function showLoading(text) {
