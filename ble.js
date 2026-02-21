@@ -23,6 +23,8 @@ class AmazfitDevice {
         this.activityChunks = []; // Almacén de trozos para evitar realocación continua
         this.totalReceived = 0;
         this.lastUiUpdate = 0;
+        this.syncWatchdog = null; // Watchdog para el primer paquete de sync
+        this.syncTimeout = null; // Watchdog para la inactividad durante el sync
         this.log = (msg, type) => console.log(msg);
     }
 
@@ -240,6 +242,15 @@ class AmazfitDevice {
         this.totalReceived = 0;
         this.lastUiUpdate = 0;
 
+        // Iniciar Watchdog de seguridad (10 segundos para recibir el primer paquete)
+        if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
+        this.syncWatchdog = setTimeout(() => {
+            if (this.totalReceived === 0) {
+                this.log("Sincronización fallida por tiempo de espera. El reloj no respondió al comando.", "error");
+                this._finalizeSync();
+            }
+        }, 10000);
+
         if (!this.fetchControlChar) {
             throw new Error("Característica de control no encontrada. El sync no es posible.");
         }
@@ -333,6 +344,7 @@ class AmazfitDevice {
             if (cmdReply === 0x01 && status === 0x01) {
                 if (this.totalReceived === 0) {
                     this.log("Handshake inicial OK (10 01 01).", "ble");
+                    if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
                 } else if (this.totalReceived > 1000) {
                     this.log("¡Señal de finalización detectada!", "system");
                     this._finalizeSync();
@@ -407,7 +419,9 @@ class AmazfitDevice {
 
     _finalizeSync() {
         if (this.syncTimeout) clearTimeout(this.syncTimeout);
+        if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
         this.syncTimeout = null;
+        this.syncWatchdog = null;
 
         // Reconstrucción única y final (O(n))
         const fullBuffer = new Uint8Array(this.totalReceived);
