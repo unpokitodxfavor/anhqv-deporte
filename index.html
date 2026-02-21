@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazfit Sport Tracker - Custom App</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body class="dark-theme">
+    <div class="glass-container">
+        <header>
+            <div class="logo">
+                <span class="icon">⌚</span>
+                <h1>Amazfit Dashboard</h1>
+            </div>
+            <div class="connection-status" id="connection-status">
+                <span class="dot"></span> Desconectado
+            </div>
+        </header>
+
+        <main>
+            <section id="auth-section" class="card">
+                <h2>1. Configuración</h2>
+                <p>Para conectar tu reloj, necesitas la <strong>Auth Key</strong> de 32 caracteres.</p>
+                <div class="input-group">
+                    <input type="password" id="auth-key" placeholder="Pega aquí tu Auth Key (32 hex chars)">
+                    <button id="save-key" class="btn secondary">Guardar Clave</button>
+                </div>
+                <p class="hint">¿No sabes cómo obtenerla? <a href="#" id="help-link">Ver guía rápida</a></p>
+                <button id="connect-btn" class="btn primary">Conectar Reloj</button>
+            </section>
+
+            <section id="activity-list-section" class="card hidden">
+                <div class="card-header">
+                    <h2>2. Actividades del Reloj</h2>
+                    <button id="refresh-activities" class="btn small">🔄 Actualizar</button>
+                </div>
+                <div id="activity-list" class="list-container">
+                    <p class="empty-msg">No hay actividades cargadas.</p>
+                </div>
+            </section>
+
+            <section id="stats-section" class="card hidden">
+                <div class="card-header">
+                    <h2>3. Detalle de Actividad</h2>
+                    <button id="close-stats" class="btn close">✖</button>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="label">Distancia</span>
+                        <span class="value" id="stat-dist">0.0 km</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="label">Tiempo</span>
+                        <span class="value" id="stat-time">00:00:00</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="label">Calorías</span>
+                        <span class="value" id="stat-cal">0 kcal</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="label">Pulsaciones</span>
+                        <span class="value" id="stat-hr">-- bpm</span>
+                    </div>
+                </div>
+                <div id="map" class="map-container"></div>
+            </section>
+
+            <section id="log-section" class="card">
+                <div class="card-header">
+                    <h2>Consola de Depuración</h2>
+                    <button id="clear-logs" class="btn small secondary">Limpiar</button>
+                </div>
+                <div id="log-console" class="console">
+                    <div class="log-entry system">Sistema listo. Esperando conexión...</div>
+                </div>
+            </section>
+        </main>
+
+    </div>
+
+    <div id="loading-overlay" class="overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p id="loading-text">Sincronizando...</p>
+        <button id="cancel-loading" class="btn small secondary" style="margin-top: 20px;">Cancelar</button>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="parser.js?v=1.0.7"></script>
+    <script src="ble.js?v=1.0.7"></script>
+    <script src="map.js?v=1.0.7"></script>
+    <script src="app.js?v=1.0.7"></script>
+</body>
+
+</html>
