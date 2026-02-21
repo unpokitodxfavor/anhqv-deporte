@@ -188,6 +188,7 @@ class AmazfitDevice {
                     // 0x10 = Response, [1] = Opcode (02=Random, 03=Final), [2] = Status (01=Success)
                     if (value[0] === 0x10 && value[1] === 0x02 && value[2] === 0x01) {
                         this.log("Número aleatorio recibido. Encriptando y respondiendo...", "ble");
+                        const random = value.slice(3);
                         const encrypted = await this._encryptAES(this.authKey, random);
                         const response = new Uint8Array(2 + encrypted.length);
                         response[0] = 0x03;
