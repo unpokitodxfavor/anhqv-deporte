@@ -182,6 +182,9 @@ class AmazfitDevice {
                 this.authenticated = true;
                 return this.device.name;
             }
+            if (this.totalReceived === 0) {
+                this.log("Ciclo de handshake completado sin datos. Esperando al watchdog de emergencia...", "system");
+            }
         } catch (err) {
             this.log(`No se pudo auto-conectar: ${err.message}`, "system");
         }
@@ -262,15 +265,22 @@ class AmazfitDevice {
         this.totalReceived = 0;
         this.lastUiUpdate = 0;
 
-        // Iniciar Watchdog de seguridad (12 segundos para recibir el primer paquete)
+        // Iniciar Watchdog de seguridad (15 segundos para el primer intento)
         if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
-        this.syncWatchdog = setTimeout(() => {
+        this.syncWatchdog = setTimeout(async () => {
             if (this.totalReceived === 0) {
-                this.log("Sincronización fallida por tiempo de espera. Reintentando con Autorización Forzada...", "error");
-                this._forceAuthorizeFetch();
-                this._finalizeSync();
+                this.log("Sincronización fallida. Intentando Autorización de Emergencia...", "error");
+                await this._forceAuthorizeFetch();
+
+                // Darle 10 segundos extra para reaccionar al comando de emergencia
+                this.syncWatchdog = setTimeout(() => {
+                    if (this.totalReceived === 0) {
+                        this.log("Fallo definitivo: El reloj no responde a ningún comando.", "error");
+                        this._finalizeSync();
+                    }
+                }, 10000);
             }
-        }, 12000);
+        }, 15000);
 
         if (!this.fetchControlChar) {
             throw new Error("Característica de control no encontrada. El sync no es posible.");
@@ -372,7 +382,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.2.2";
+            const APP_VERSION = "1.2.3";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -525,13 +535,18 @@ class AmazfitDevice {
     }
 
     async _forceAuthorizeFetch() {
-        this.log("Enviando comando de Autorización Forzada (11-bytes)...", "system");
+        this.log("Enviando comando de Emergencia (10-bytes)...", "system");
         try {
-            // 0x01 0x01 + 9 bytes de ceros = "Prepare and Fetch Everything"
-            const authFetch = new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-            await this.fetchControlChar.writeValue(authFetch);
+            // Variante 0x01 0x01 + 8 bytes de 0x01 (Fetch Everything Force)
+            const authFetch = new Uint8Array([0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01]);
+            const char = this.fetchControlChar || this.fetchDataChar;
+            try {
+                await char.writeValue(authFetch);
+            } catch (e) {
+                await char.writeValueWithoutResponse(authFetch);
+            }
         } catch (e) {
-            this.log("Error en Autorización Forzada.", "error");
+            this.log(`Fallo crítico en emergencia: ${e.message}`, "error");
         }
     }
 
