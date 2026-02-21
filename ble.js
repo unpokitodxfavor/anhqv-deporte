@@ -188,7 +188,6 @@ class AmazfitDevice {
                     // 0x10 = Response, [1] = Opcode (02=Random, 03=Final), [2] = Status (01=Success)
                     if (value[0] === 0x10 && value[1] === 0x02 && value[2] === 0x01) {
                         this.log("Número aleatorio recibido. Encriptando y respondiendo...", "ble");
-                        const random = value.slice(3);
                         const encrypted = await this._encryptAES(this.authKey, random);
                         const response = new Uint8Array(2 + encrypted.length);
                         response[0] = 0x03;
@@ -333,34 +332,29 @@ class AmazfitDevice {
             if (cmdReply === 0x01 && status === 0x01) {
                 if (this.totalReceived === 0) {
                     this.log("Handshake inicial OK (10 01 01).", "ble");
-                } else if (this.totalReceived > 100) {
-                    this.log("¡Señal de fin de lote detectada!", "system");
+                } else if (this.totalReceived > 1000) {
+                    // Si llega un 10 01 01 después de muchos datos, es el fin real
+                    this.log("¡Señal de finalización detectada!", "system");
                     this._finalizeSync();
                 }
                 return;
             }
 
             if (cmdReply === 0x03 && status === 0x01) {
-                this.log("Puerta 0x03 abierta. Probando disparo con 0x05...", "ble");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x05])), 100);
+                this.log("Puerta 0x03 abierta. Disparando 0x05...", "ble");
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x05])), 50);
                 return;
             }
 
             if (cmdReply === 0x05 && status === 0x02) {
-                this.log("Disparo 0x05 rechazado (02). Probando comando 0x04...", "error");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x04])), 100);
+                this.log("Rechazo 0x05. Probando 0x04...", "error");
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x04])), 50);
                 return;
             }
 
             if (cmdReply === 0x04 && status === 0x02) {
-                this.log("Comando 0x04 rechazado. Probando 0x01 (Start Data)...", "error");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x01])), 100);
-                return;
-            }
-
-            if (cmdReply === 0x02 && status === 0x04) {
-                this.log("ACK 0x02 rechazado (Status 04). Probando ACK 0x03...", "error");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x03])), 100);
+                this.log("Rechazo 0x04. Probando 0x01...", "error");
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x01])), 50);
                 return;
             }
         }
@@ -368,17 +362,24 @@ class AmazfitDevice {
         // Cabecera v2 detectada
         if (isHeader && data[1] === 0x01) {
             const lastByte = data[14];
-            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Enviando ACK...`, "ble");
+            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Iniciando transferencia...`, "ble");
             this._sendSyncAck(new Uint8Array([0x02, lastByte]));
         }
 
-        // ACUMULACIÓN ULTRA-RÁPIDA (Zero Copy / Zero Allocation merge avoid)
+        // ACUMULACIÓN ULTRA-RÁPIDA
         this.activityChunks.push(data);
+        const oldTotal = this.totalReceived;
         this.totalReceived += data.length;
 
-        // Throttling de la UI y Detección de Inactividad
+        // ACK PROGRESIVO: Si no enviamos nada, el reloj se pausa cada 2-4KB.
+        // Enviamos un confirmador ligero cada 2KB para mantener el flujo abierto.
+        if (Math.floor(this.totalReceived / 2048) > Math.floor(oldTotal / 2048)) {
+            this._sendSyncAck(new Uint8Array([0x02]));
+        }
+
+        // Throttling y Detección de Inactividad
         if (this.syncTimeout) clearTimeout(this.syncTimeout);
-        this.syncTimeout = setTimeout(() => this._finalizeSync(), 2500);
+        this.syncTimeout = setTimeout(() => this._finalizeSync(), 3000); // 3s de silencio = FIN
 
         const now = Date.now();
         if (now - this.lastUiUpdate > 300) {
@@ -449,34 +450,19 @@ class AmazfitDevice {
             ackCmd = new Uint8Array([ackCmd]);
         }
 
-        const hexCmd = Array.from(ackCmd).map(b => b.toString(16).padStart(2, '0')).join(' ');
-        this.log(`Enviando comando de volcado: [${hexCmd}]...`, "ble");
-
         try {
-            const charsToTry = [this.lastWorkingChar, this.fetchControlChar, this.fetchDataChar].filter(c => c !== null);
+            const char = this.lastWorkingChar || this.fetchControlChar;
+            if (!char) return;
 
-            let ackSuccess = false;
-            for (const char of charsToTry) {
-                try {
-                    await char.writeValue(ackCmd);
-                    ackSuccess = true;
-                    break;
-                } catch (e) {
-                    try {
-                        await char.writeValueWithoutResponse(ackCmd);
-                        ackSuccess = true;
-                        break;
-                    } catch (e2) { }
-                }
-            }
-
-            if (ackSuccess) {
-                this.log(`Comando [${hexCmd}] enviado.`, "system");
-            } else {
-                throw new Error("No se pudo enviar el ACK a ninguna característica.");
+            // PRIORIDAD A WithoutResponse PARA MÁXIMA VELOCIDAD
+            try {
+                await char.writeValueWithoutResponse(ackCmd);
+            } catch (e) {
+                await char.writeValue(ackCmd);
             }
         } catch (err) {
-            this.log(`Error al enviar confirmación: ${err.message}`, "error");
+            // Silencioso durante el sync para no frenar el proceso
+            if (this.totalReceived === 0) console.error("Error ACK:", err.message);
         }
     }
 
