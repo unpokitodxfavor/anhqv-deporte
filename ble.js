@@ -285,44 +285,53 @@ class AmazfitDevice {
                 } catch (e) { }
             }
 
-            this.log("Enviando comando de RESET antes de iniciar sync...", "ble");
-            try {
-                await this.fetchControlChar.writeValue(new Uint8Array([0x01, 0x00]));
-                await new Promise(r => setTimeout(r, 500));
-            } catch (e) { }
+            const forceWrite = async (data, label) => {
+                const chars = [this.fetchControlChar, this.fetchDataChar].filter((c, i, a) => c && a.indexOf(c) === i);
+                for (const char of chars) {
+                    try {
+                        this.log(`Enviando [${label}] a ${char.uuid.slice(-4)}...`, "ble");
+                        await char.writeValue(data);
+                        return true;
+                    } catch (e) {
+                        try {
+                            this.log(`Fallback WithoutResponse en ${char.uuid.slice(-4)}...`, "ble");
+                            await char.writeValueWithoutResponse(data);
+                            return true;
+                        } catch (e2) {
+                            this.log(`Fallo en ${char.uuid.slice(-4)}: ${e2.message}`, "error");
+                        }
+                    }
+                }
+                return false;
+            };
 
-            this.log("Fase de Calentamiento (Read Count 01 02)...", "ble");
-            try {
-                await this.fetchControlChar.writeValue(new Uint8Array([0x01, 0x02]));
-                await new Promise(r => setTimeout(r, 800));
-            } catch (e) { }
+            this.log("Vanguard: Enviando RESET...", "ble");
+            await forceWrite(new Uint8Array([0x01, 0x00]), "RESET");
+            await new Promise(r => setTimeout(r, 1000));
+
+            this.log("Vanguard: Enviando Warmup (01 02)...", "ble");
+            await forceWrite(new Uint8Array([0x01, 0x02]), "WARMUP");
+            await new Promise(r => setTimeout(r, 1000));
 
             const variants = [
                 { name: "Standard (2-bytes)", cmd: new Uint8Array([0x01, 0x01]) },
+                { name: "Bip Mini (4-bytes)", cmd: new Uint8Array([0x01, 0x01, 0x00, 0x00]) },
                 { name: "Extended (6-bytes)", cmd: new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00]) },
                 { name: "Full Sync (10-bytes)", cmd: new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) }
             ];
 
             let success = false;
             for (const variant of variants) {
-                if (this.totalReceived > 0) break; // Si ya empezó a bajar algo, paramos la ráfaga
-
-                this.log(`Probando variante: ${variant.name}...`, "ble");
-                try {
-                    await this.fetchControlChar.writeValue(variant.cmd);
-                    success = true;
-                    this.lastWorkingChar = this.fetchControlChar;
-                    await new Promise(r => setTimeout(r, 1500)); // Esperar respuesta antes de la siguiente variante
-                } catch (e) {
-                    this.log(`Fallo variante ${variant.name}: ${e.message}`, "error");
-                }
+                if (this.totalReceived > 0) break;
+                success = await forceWrite(variant.cmd, variant.name);
+                if (success) await new Promise(r => setTimeout(r, 2000));
             }
 
             if (!success) {
-                throw new Error("Ninguna variante de comando fue aceptada por el reloj.");
+                throw new Error("El reloj rechazó todas las variantes de escritura Vanguard.");
             }
 
-            this.log("Ráfaga de comandos completada. Esperando flujo de datos...", "system");
+            this.log("Vanguard completado. Esperando datos...", "system");
         } catch (err) {
             this.log(`ERROR crítico de sincronización: ${err.message}`, "error");
             this.log("TIP: Reinicia el Bluetooth y cierra Zepp/Notify de fondo.", "system");
@@ -344,7 +353,7 @@ class AmazfitDevice {
 
         if (isControl) {
             const cmdReply = data[1];
-            const APP_VERSION = "1.1.8";
+            const APP_VERSION = "1.1.9";
             const status = data[2];
 
             if (cmdReply === 0x01 && status === 0x01) {
