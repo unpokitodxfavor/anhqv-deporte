@@ -16,6 +16,7 @@ class AmazfitDevice {
         this.authChar = null;
         this.fetchControlChar = null;
         this.fetchDataChar = null;
+        this.lastWorkingChar = null; // Guardará el canal que acepte escrituras
         this.authKey = null; // 16 bytes ArrayBuffer
         this.authenticated = false;
         this.activityBuffer = new Uint8Array(0);
@@ -82,6 +83,10 @@ class AmazfitDevice {
                             if (c.uuid === AUTH_CHAR_ID) this.authChar = c;
                             if (c.uuid === FETCH_CONTROL_ID) this.fetchControlChar = c;
                             if (c.uuid === FETCH_DATA_ID) this.fetchDataChar = c;
+
+                            // Log descriptivo de propiedades
+                            const props = Object.keys(c.properties).filter(key => c.properties[key]);
+                            this.log(`Característica hallada: ${c.uuid.substring(0, 8)}... Props: [${props.join(', ')}]`, "ble");
                         }
                     } catch (err) { }
                 }
@@ -95,7 +100,7 @@ class AmazfitDevice {
             throw new Error("No se ha podido encontrar la característica de Autenticación (0009).");
         }
 
-        // Fallback: si no hay 0004/0005 especializados, usamos el que esté disponible
+        // Fallback dinámico basado en UUIDs
         if (!this.fetchControlChar) this.fetchControlChar = this.fetchDataChar;
         if (!this.fetchDataChar) this.fetchDataChar = this.fetchControlChar;
 
@@ -234,49 +239,102 @@ class AmazfitDevice {
         }
 
         try {
-            // SEGURIDAD: Algunos relojes fallan si hay varias notificaciones activas.
+            // SEGURIDAD MÁXIMA: Liberamos el canal de autenticación.
             if (this.authChar) {
                 try {
-                    this.log("Liberando canal de autenticación...", "ble");
+                    this.log("Limpiando canal Auth...", "ble");
                     await this.authChar.stopNotifications();
+                } catch (e) { }
+            }
+
+            // Espera mayor (2s) para estabilización de hardware
+            this.log("Esperando estabilización de hardware (2s)...", "system");
+            await new Promise(r => setTimeout(r, 2000));
+
+            this.log("Habilitando notificaciones en canal Data...", "ble");
+            await this.fetchDataChar.startNotifications();
+            this.fetchDataChar.addEventListener('characteristicvaluechanged', (e) => this._handleActivityData(e));
+
+            // Si hay un canal de control específico, también pedimos notificaciones por si acaso
+            if (this.fetchControlChar && this.fetchControlChar.uuid !== this.fetchDataChar.uuid) {
+                try {
+                    this.log("Habilitando notificaciones en canal Control...", "ble");
+                    await this.fetchControlChar.startNotifications();
                 } catch (e) { }
             }
 
             await new Promise(r => setTimeout(r, 1000));
 
-            this.log("Abriendo canal de datos (Data)...", "ble");
-            await this.fetchDataChar.startNotifications();
-            this.fetchDataChar.addEventListener('characteristicvaluechanged', (e) => this._handleActivityData(e));
-
-            // Si el canal de control es distinto al de datos, abrimos notificaciones también
-            if (this.fetchControlChar.uuid !== this.fetchDataChar.uuid) {
-                this.log("Abriendo canal de control (Fetch)...", "ble");
-                await this.fetchControlChar.startNotifications();
-            }
-
-            await new Promise(r => setTimeout(r, 800));
-
             const fetchCmd = new Uint8Array([0x01, 0x01]);
-            this.log("Enviando comando de sincronización final...", "ble");
 
-            // Intento con writeValue (Auto)
-            try {
-                await this.fetchControlChar.writeValue(fetchCmd);
-            } catch (writeErr) {
-                this.log("Fallo writeValue estándar, intentando WithoutResponse...", "error");
-                await this.fetchControlChar.writeValueWithoutResponse(fetchCmd);
+            // ESTRATEGIA DE ESCRITURA EXPERIMENTAL
+            const attemptWrite = async (char, label) => {
+                this.log(`Intentando enviar comando a ${label}...`, "ble");
+                try {
+                    await char.writeValue(fetchCmd);
+                    this.lastWorkingChar = char; // Guardamos el éxito
+                    return true;
+                } catch (e) {
+                    this.log(`Fallo writeValue en ${label}: ${e.message}`, "error");
+                    try {
+                        this.log(`Probando fallback WithoutResponse en ${label}...`, "ble");
+                        await char.writeValueWithoutResponse(fetchCmd);
+                        this.lastWorkingChar = char; // Guardamos el éxito
+                        return true;
+                    } catch (e2) {
+                        this.log(`Fallo total en ${label}: ${e2.message}`, "error");
+                        return false;
+                    }
+                }
+            };
+
+            let success = await attemptWrite(this.fetchControlChar, "FETCH_CONTROL (0005)");
+
+            // Si falla el canal primario, probamos el de DATA (algunos modelos lo prefieren)
+            if (!success && this.fetchDataChar && this.fetchDataChar.uuid !== this.fetchControlChar.uuid) {
+                this.log("Reintentando con canal alternativo (PATCH)...", "system");
+                success = await attemptWrite(this.fetchDataChar, "FETCH_DATA (0004)");
             }
 
-            this.log("Comando enviado con éxito. Esperando respuesta del reloj...", "system");
+            if (!success) {
+                throw new Error("No se pudo enviar el comando a ninguna característica. El reloj ha rechazado la operación.");
+            }
+
+            this.log("¡Comando aceptado! Esperando bytes del reloj...", "system");
         } catch (err) {
-            this.log(`ERROR sync: ${err.message}`, "error");
+            this.log(`ERROR crítico de sincronización: ${err.message}`, "error");
+            this.log("TIP: Reinicia el Bluetooth y cierra Zepp/Notify de fondo.", "system");
             throw err;
         }
     }
 
     _handleActivityData(event) {
         const data = new Uint8Array(event.target.value.buffer);
-        this.log(`Paquete de datos recibido: ${data.length} bytes`, "ble");
+        const hex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
+
+        this.log(`Paquete recibido: ${data.length} bytes [${hex}]`, "ble");
+
+        // Respuesta de estado Huami (3 bytes) -> Formato: [10, CMD, STATUS]
+        // 0x10 (16 decimal) es el prefijo de respuesta.
+        if (data.length === 3 && data[0] === 0x10) {
+            const cmdId = data[1];
+            const status = data[2];
+
+            if (cmdId === 0x01) { // Respuesta al comando de Fetch (0x01)
+                if (status === 0x08) {
+                    this.log("El reloj informa: No hay nuevas actividades para sincronizar.", "system");
+                    window.dispatchEvent(new CustomEvent('amazfit-status', { detail: { code: 'empty' } }));
+                    return;
+                } else if (status === 0x02) {
+                    this.log("El reloj ha rechazado la orden (Error 0x02). Reintentando con comando extendido...", "error");
+                    this._retryWithExtendedCommand(); // This method needs to be defined
+                    return;
+                } else if (status === 0x01) {
+                    this.log("Handshake de sync correcto (01-OK). Esperando flujo de datos...", "ble");
+                    return;
+                }
+            }
+        }
 
         // Acumular datos
         const newBuffer = new Uint8Array(this.activityBuffer.length + data.length);
@@ -291,6 +349,29 @@ class AmazfitDevice {
                 fullBuffer: this.activityBuffer
             }
         }));
+    }
+
+    async _retryWithExtendedCommand() {
+        this.log("Esperando pausa de seguridad antes del reintento (1.5s)...", "system");
+        await new Promise(r => setTimeout(r, 1500));
+
+        this.log("Iniciando modo de compatibilidad (Full Sync)...", "system");
+        try {
+            // Comando extendido con timestamp NULL (10 bytes en total)
+            const extendedCmd = new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
+            // Usamos el canal que funcionó antes (lastWorkingChar)
+            const char = this.lastWorkingChar || this.fetchControlChar;
+
+            try {
+                await char.writeValue(extendedCmd);
+            } catch (e) {
+                await char.writeValueWithoutResponse(extendedCmd);
+            }
+            this.log("Comando extendido enviado con éxito.", "ble");
+        } catch (err) {
+            this.log(`Fallo crítico en reintento: ${err.message}`, "error");
+        }
     }
 
     // Helpers

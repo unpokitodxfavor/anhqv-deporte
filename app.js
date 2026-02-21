@@ -145,6 +145,15 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('amazfit-data', (event) => {
         const { chunk, fullBuffer } = event.detail;
 
+        // Si el paquete es de estado (3 bytes), no actualizamos el contador de descarga
+        if (chunk.length === 3 && chunk[0] === 0x01) {
+            if (chunk[2] === 0x08) {
+                hideLoading();
+                alert("No hay actividades nuevas en el reloj.");
+                return;
+            }
+        }
+
         // Actualizar UI del loader con el progreso (bytes recibidos)
         const loadingText = document.getElementById('loading-text');
         if (loadingText) {
