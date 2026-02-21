@@ -20,6 +20,9 @@ class AmazfitDevice {
         this.authKey = null; // 16 bytes ArrayBuffer
         this.authenticated = false;
         this.activityBuffer = new Uint8Array(0);
+        this.activityChunks = []; // Almacén de trozos para evitar realocación continua
+        this.totalReceived = 0;
+        this.lastUiUpdate = 0;
         this.log = (msg, type) => console.log(msg);
     }
 
@@ -231,8 +234,11 @@ class AmazfitDevice {
         if (!this.authenticated) throw new Error("No autenticado");
         this.log("Solicitando lista de actividades reales...", "system");
 
-        // Limpiar acumulador
+        // Limpiar acumuladores y contadores
         this.activityBuffer = new Uint8Array(0);
+        this.activityChunks = [];
+        this.totalReceived = 0;
+        this.lastUiUpdate = 0;
 
         if (!this.fetchControlChar) {
             throw new Error("Característica de control no encontrada. El sync no es posible.");
@@ -310,12 +316,20 @@ class AmazfitDevice {
 
     _handleActivityData(event) {
         const data = new Uint8Array(event.target.value.buffer);
-        const hex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
 
-        this.log(`Bytes: [${hex}] (${data.length} bytes)`, "ble");
+        // Optimización: No convertir a HEX ni loguear cada paquete pequeño de datos
+        // Solo logueamos si es una respuesta de control (empieza por 0x10 y es corta) 
+        // o si es el inicio de una cabecera.
+        const isControl = data.length <= 3 && data[0] === 0x10;
+        const isHeader = data.length === 15 && data[0] === 0x10;
+
+        if (isControl || isHeader) {
+            const hex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
+            this.log(`Control: [${hex}] (${data.length} bytes)`, "ble");
+        }
 
         // Respuesta de estado Huami (3 bytes) -> Formato: [10, CMD, STATUS]
-        if (data.length === 3 && data[0] === 0x10) {
+        if (isControl) {
             const cmdReply = data[1];
             const status = data[2];
 
@@ -330,7 +344,6 @@ class AmazfitDevice {
                     return;
                 } else if (status === 0x01) {
                     this.log("Handshake inicial OK (10 01 01).", "ble");
-                    // No hacemos nada, esperamos a ver si llega la cabecera de 15 bytes
                     return;
                 }
             }
@@ -359,33 +372,51 @@ class AmazfitDevice {
                 return;
             }
 
-            if (cmdReply === 0x01 && status === 0x01 && this.activityBuffer.length > 5) {
-                this.log("¡Handshake finalizado con éxito! El flujo de datos debería comenzar.", "system");
+            if (cmdReply === 0x01 && status === 0x01 && this.totalReceived > 5) {
+                this.log("¡Handshake finalizado con éxito! Descargando datos...", "system");
                 return;
             }
         }
 
-        // Si recibimos exactamente 15 bytes (Cabecera v2)
-        if (data.length === 15 && data[0] === 0x10 && data[1] === 0x01) {
-            const lastByte = data[14]; // Posible índice de actividad
+        // Cabecera v2 detectada
+        if (isHeader && data[1] === 0x01) {
+            const lastByte = data[14];
             this.log(`Cabecera v2 detectada (Index: ${lastByte}). Enviando ACK indexado...`, "ble");
-            // Probamos el ACK con el índice enviado por el reloj
             this._sendSyncAck(new Uint8Array([0x02, lastByte]));
         }
 
-        // Acumular datos
-        const newBuffer = new Uint8Array(this.activityBuffer.length + data.length);
-        newBuffer.set(this.activityBuffer);
-        newBuffer.set(data, this.activityBuffer.length);
-        this.activityBuffer = newBuffer;
+        // ACUMULACIÓN OPTIMIZADA: Usar array de chunks (O(1))
+        this.activityChunks.push(data);
+        this.totalReceived += data.length;
 
-        // Emitir evento para la UI con el buffer acumulado actual
-        window.dispatchEvent(new CustomEvent('amazfit-data', {
-            detail: {
-                chunk: data,
-                fullBuffer: this.activityBuffer
+        // Throttling de la UI: Actualizar cada 200ms o si es un paquete de control
+        const now = Date.now();
+        if (now - this.lastUiUpdate > 200 || isControl || isHeader) {
+            this.lastUiUpdate = now;
+
+            // Reconstruir el buffer solo para el evento (o enviar solo el tamaño)
+            // Para no romper la compatibilidad con app.js, reconstruimos aquí
+            const fullBuffer = new Uint8Array(this.totalReceived);
+            let offset = 0;
+            for (const chunk of this.activityChunks) {
+                fullBuffer.set(chunk, offset);
+                offset += chunk.length;
             }
-        }));
+            this.activityBuffer = fullBuffer;
+
+            window.dispatchEvent(new CustomEvent('amazfit-data', {
+                detail: {
+                    chunk: data,
+                    fullBuffer: this.activityBuffer,
+                    received: this.totalReceived
+                }
+            }));
+
+            // Log de progreso cada ~2KB
+            if (this.totalReceived % 2048 < 20) {
+                this.log(`Descargado: ${this.totalReceived} bytes...`, "system");
+            }
+        }
     }
 
     async _retryWithExtendedCommand() {
