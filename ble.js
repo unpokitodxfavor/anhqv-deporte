@@ -158,6 +158,11 @@ class AmazfitDevice {
                 if (!this.fetchControlChar) this.fetchControlChar = this.fetchDataChar;
                 if (!this.fetchDataChar) this.fetchDataChar = this.fetchControlChar;
 
+                // Configurar el listener de datos una sola vez
+                this.fetchDataChar.removeEventListener('characteristicvaluechanged', this._activityDataBound);
+                this._activityDataBound = (e) => this._handleActivityData(e);
+                this.fetchDataChar.addEventListener('characteristicvaluechanged', this._activityDataBound);
+
                 await this._authenticate();
                 this.authenticated = true;
                 return this.device.name;
@@ -270,7 +275,7 @@ class AmazfitDevice {
 
             this.log("Habilitando notificaciones en canal Data...", "ble");
             await this.fetchDataChar.startNotifications();
-            this.fetchDataChar.addEventListener('characteristicvaluechanged', (e) => this._handleActivityData(e));
+            // El listener ahora se configura en connect/autoConnect para evitar duplicidad
 
             // Si hay un canal de control específico, también pedimos notificaciones por si acaso
             if (this.fetchControlChar && this.fetchControlChar.uuid !== this.fetchDataChar.uuid) {
@@ -280,7 +285,11 @@ class AmazfitDevice {
                 } catch (e) { }
             }
 
-            await new Promise(r => setTimeout(r, 1000));
+            this.log("Enviando comando de RESET antes de iniciar sync...", "ble");
+            try {
+                await this.fetchControlChar.writeValue(new Uint8Array([0x01, 0x00]));
+                await new Promise(r => setTimeout(r, 500));
+            } catch (e) { }
 
             const fetchCmd = new Uint8Array([0x01, 0x01]);
 
