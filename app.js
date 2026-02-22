@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.3.10";
+    const APP_VERSION = "1.3.11";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -148,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     refreshBtn.addEventListener('click', async () => {
-        showLoading('Flujo de Pulsar v1.3.10 (Recuperación Absoluta)...');
+        showLoading('Flujo de Rayo Cósmico v1.3.11 (Resiliencia Total)...');
 
         // Chronos Timeout v1.3.10: 90 seconds (to compensate for 20s escape)
         const safetyHatch = setTimeout(() => {
