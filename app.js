@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (connectBtn) {
         connectBtn.onclick = async () => {
-            log('>>> CLICK DETECTADO (v1.0.5) <<<', 'system');
+            log('>>> CLICK DETECTADO (Patch v1.2.4) <<<', 'system');
             const key = authKeyInput.value.trim();
             log(`Clave detectada length: ${key.length}`, 'system');
 
