@@ -370,7 +370,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.1";
+            const APP_VERSION = "1.3.2";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -411,8 +411,9 @@ class AmazfitDevice {
 
             // Detección de peticiones de ACK del reloj (10 02 XX)
             if (cmdReply === 0x02) {
-                this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo...`, "ble");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, status])), 250);
+                this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo (Stealth)...`, "ble");
+                // v1.3.2: ACK inmediato sin esperar al Mutex para no frenar al reloj
+                this._sendSyncAck(new Uint8Array([0x02, status]), true);
                 return;
             }
 
@@ -495,49 +496,56 @@ class AmazfitDevice {
         await this._safeWrite(extendedCmd, "FULL_SYNC", 5);
     }
 
-    async _sendSyncAck(ackCmd, withoutResponse = false) {
+    async _sendSyncAck(ackCmd, withoutResponse = true) {
         if (!(ackCmd instanceof Uint8Array)) {
             ackCmd = new Uint8Array([ackCmd]);
         }
-        // v1.3.1: Si es un ACK de confirmación de flujo, usamos modo rápido sin respuesta
+        // v1.3.2: Prioridad absoluta al modo 'sin respuesta' para evitar bloqueos Busy
         if (withoutResponse) {
             try {
+                // v1.3.2: Enviamos SIEMPRE por el canal de control (05) para evitar choques
                 const char = this.fetchControlChar || this.fetchDataChar;
-                if (char) await char.writeValueWithoutResponse(ackCmd);
+                if (char) {
+                    await char.writeValueWithoutResponse(ackCmd);
+                    this.log(`ACK_STEALTH -> ${char.uuid.slice(0, 8)}`, "ble");
+                }
                 return;
-            } catch (e) { }
+            } catch (e) {
+                this.log("Fallo en ACK_STEALTH, reintentando por vía segura...", "ble");
+            }
         }
-        await this._safeWrite(ackCmd, "ACK", 2);
+        await this._safeWrite(ackCmd, "ACK_SECURE", 2);
     }
 
     async _safeWrite(data, label, retries = 10) {
-        // v1.3.1 - Mutex Estricto: Esperar lo que haga falta
+        // v1.3.2 - Mutex Estricto: Esperar lo que haga falta
         while (this.isWriting) {
             await new Promise(r => setTimeout(r, 100));
         }
 
         this.isWriting = true;
         try {
-            // v1.3.1: Restauramos fallback al canal de datos (04) si el de control (05) falla
-            const chars = [this.fetchControlChar, this.fetchDataChar].filter((c, i, a) => c && a.indexOf(c) === i);
+            // v1.3.2: Concentramos fuerzas en el canal de CONTROL (05). Solo usamos el de datos si el de control no existe.
+            const chars = [this.fetchControlChar || this.fetchDataChar].filter(c => c);
 
             for (let attempt = 1; attempt <= retries; attempt++) {
                 for (const char of chars) {
                     try {
-                        // Pausa de estabilización 1.3.1: Dar tiempo al hardware
+                        // Pausa de estabilización 1.3.2: Dar tiempo al hardware
                         await new Promise(r => setTimeout(r, 450));
 
-                        this.log(`Sync [${label}] -> ${char.uuid.slice(-2)} (${attempt}/${retries})...`, "ble");
+                        this.log(`Sync [${label}] -> ${char.uuid.slice(0, 8)} (${attempt}/${retries})...`, "ble");
                         await char.writeValue(data);
                         return true;
                     } catch (e) {
                         if (attempt < retries) {
                             try {
+                                // Fallback a sin-respuesta si el WRITE falla (GATT Busy)
                                 await char.writeValueWithoutResponse(data);
                                 return true;
                             } catch (e2) {
-                                this.log(`GATT Ocupado. Reintento en ${800 * attempt}ms...`, "ble");
-                                await new Promise(r => setTimeout(r, 800 * attempt));
+                                this.log(`GATT Busy (${attempt}). Reintento en 1000ms...`, "ble");
+                                await new Promise(r => setTimeout(r, 1000));
                             }
                         }
                     }
