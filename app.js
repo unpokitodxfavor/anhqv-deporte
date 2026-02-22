@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.3.4";
+    const APP_VERSION = "1.3.5";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -148,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     refreshBtn.addEventListener('click', async () => {
-        showLoading('Flujo Nebulosa v1.3.4 (Abriendo el túnel de datos)...');
+        showLoading('Flujo Supernova v1.3.5 (Estabilizando canal de mando)...');
 
         // Chronos Timeout: 60 seconds (ample time for triple-handshake)
         const safetyHatch = setTimeout(() => {

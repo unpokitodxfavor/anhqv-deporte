@@ -312,29 +312,29 @@ class AmazfitDevice {
                 try { await this.fetchControlChar.startNotifications(); } catch (e) { }
             }
 
-            // Pausa Proactiva 1.3.1: Dar tiempo a que los servicios BLE se asienten
-            this.log("Pausa de asentamiento (2s)...", "ble");
-            await new Promise(r => setTimeout(r, 2000));
+            // Pausa de asentamiento v1.3.5 (3.5s): El Bip U Pro necesita tiempo extra
+            this.log("Pausa de asentamiento prolongada (3.5s)...", "ble");
+            await new Promise(r => setTimeout(r, 3500));
 
             // SECUENCIA ATÓMICA v1.3.1: Una fase tras otra, sin solapamientos
 
-            // Fase 1: Descarga Directa
-            this.log("Fase 1: Descarga Directa (Atomic 1.3.1)...", "ble");
+            // Fase 1: Descarga Directa (SOLO canal de CONTROL 05)
+            this.log("Fase 1: Descarga Directa (Control Estricto)...", "ble");
             const directFetch = new Uint8Array([0x01, 0x01, 0xE2, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
-            let success = await this._safeWrite(directFetch, "DIRECT_FETCH");
+            let success = await this._safeWrite(directFetch, "DIRECT_FETCH", 10, this.fetchControlChar);
 
-            // Si falla la directa, esperamos y probamos la secundaria
+            // Si falla la directa, esperamos y probamos la secundaria (SOLO canal de CONTROL 05)
             if (!success && this.totalReceived === 0) {
                 this.log("Fase 1 fallida. Esperando 5s para Handshake Secundario...", "system");
                 await new Promise(r => setTimeout(r, 5000));
                 const secondaryCmd = new Uint8Array([0x01, 0x01, 0xE8, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]);
-                success = await this._safeWrite(secondaryCmd, "SECONDARY");
+                success = await this._safeWrite(secondaryCmd, "SECONDARY", 10, this.fetchControlChar);
             }
 
-            // Si todo lo anterior falla, vamos con la emergencia
+            // Si todo lo anterior falla, vamos con la emergencia (SOLO canal de CONTROL 05)
             if (!success && this.totalReceived === 0) {
-                this.log("Intentando Autorización de Emergencia v2...", "error");
-                await this._forceAuthorizeFetch();
+                this.log("Intentando Autorización de Emergencia v2 (Control Estricto)...", "error");
+                await this._forceAuthorizeFetch(); // Este usa _safeWrite internamente, lo ajustamos allí
             }
 
             if (this.totalReceived === 0) {
@@ -370,7 +370,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.4";
+            const APP_VERSION = "1.3.5";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -538,7 +538,7 @@ class AmazfitDevice {
         await this._safeWrite(ackCmd, "ACK_SECURE", 2);
     }
 
-    async _safeWrite(data, label, retries = 10) {
+    async _safeWrite(data, label, retries = 10, forceChar = null) {
         // v1.3.2 - Mutex Estricto: Esperar lo que haga falta
         while (this.isWriting) {
             await new Promise(r => setTimeout(r, 100));
@@ -546,8 +546,8 @@ class AmazfitDevice {
 
         this.isWriting = true;
         try {
-            // v1.3.3: Volvemos a la estrategia de "Caza Dual": probar Control (05) y Datos (04) secuencialmente
-            const chars = [this.fetchControlChar, this.fetchDataChar].filter((c, i, a) => c && a.indexOf(c) === i);
+            // v1.3.5: Si forceChar existe (para comandos críticos), no hunteamos canales
+            const chars = forceChar ? [forceChar] : [this.fetchControlChar, this.fetchDataChar].filter((c, i, a) => c && a.indexOf(c) === i);
 
             for (let attempt = 1; attempt <= retries; attempt++) {
                 for (const char of chars) {
@@ -566,8 +566,8 @@ class AmazfitDevice {
                                 await char.writeValueWithoutResponse(data);
                                 return true;
                             } catch (e2) {
-                                this.log(`GATT Busy en ${charLabel}. Reintento en 250ms...`, "ble");
-                                await new Promise(r => setTimeout(r, 250));
+                                this.log(`GATT Busy en ${charLabel}. Reintento en 750ms...`, "ble");
+                                await new Promise(r => setTimeout(r, 750));
                             }
                         }
                     }
@@ -580,10 +580,11 @@ class AmazfitDevice {
     }
 
     async _forceAuthorizeFetch() {
-        this.log("Enviando comando de Emergencia v2 (Null Timestamp)...", "system");
+        this.log("Enviando comando de Emergencia v2 (Control Estricto)...", "system");
         // Variante 0x01 0x01 + 8 bytes de 0x00 (Soft Fetch Force)
         const authFetch = new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        await this._safeWrite(authFetch, "EMERGENCY_V2", 5);
+        // v1.3.5: Forzamos el canal de control para la emergencia
+        await this._safeWrite(authFetch, "EMERGENCY_V2", 5, this.fetchControlChar);
     }
 
     async _syncTime() {
