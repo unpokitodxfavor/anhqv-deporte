@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.2.7";
+    const APP_VERSION = "1.2.8";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -148,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     refreshBtn.addEventListener('click', async () => {
-        showLoading('Protocolo Copy & Flush v1.2.7...');
+        showLoading('Congelación profunda activa (v1.2.8)...');
 
         // Chronos Timeout: 60 seconds (ample time for triple-handshake)
         const safetyHatch = setTimeout(() => {

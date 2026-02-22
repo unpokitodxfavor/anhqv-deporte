@@ -301,56 +301,30 @@ class AmazfitDevice {
                 } catch (e) { }
             }
 
-            // Espera mayor (2s) para estabilización de hardware
-            this.log("Esperando estabilización de hardware (2s)...", "system");
-            await new Promise(r => setTimeout(r, 2000));
+            // Congelación Profunda (4.5s) para que el reloj respire tras Auth
+            this.log("Congelación Profunda (4.5s) para estabilización...", "system");
+            await new Promise(r => setTimeout(r, 4500));
 
-            this.log("Habilitando notificaciones en canal Data...", "ble");
+            this.log("Habilitando notificaciones en canal Data/Control...", "ble");
             await this.fetchDataChar.startNotifications();
-            // El listener ahora se configura en connect/autoConnect para evitar duplicidad
-
-            // Si hay un canal de control específico, también pedimos notificaciones por si acaso
             if (this.fetchControlChar && this.fetchControlChar.uuid !== this.fetchDataChar.uuid) {
-                try {
-                    this.log("Habilitando notificaciones en canal Control...", "ble");
-                    await this.fetchControlChar.startNotifications();
-                } catch (e) { }
+                try { await this.fetchControlChar.startNotifications(); } catch (e) { }
             }
-
-            this.log("Patch 1.2.1: Ping de Auth para calentar enlace...", "ble");
-            try {
-                await this.authChar.readValue();
-                this.log("¡Ping OK!", "ble");
-            } catch (e) { }
 
             const forceWrite = async (data, label) => {
                 return await this._safeWrite(data, label);
             };
 
-            this.log("Fase 1: RESET...", "ble");
-            await forceWrite(new Uint8Array([0x01, 0x00]), "RESET");
-            await new Promise(r => setTimeout(r, 2000));
-
-            this.log("Fase 2: Warmup (01 02)...", "ble");
-            await forceWrite(new Uint8Array([0x01, 0x02]), "WARMUP");
-            await new Promise(r => setTimeout(r, 2000));
-
-            const variants = [
-                { name: "Standard (2-bytes)", cmd: new Uint8Array([0x01, 0x01]) }
-            ];
-
-            let success = false;
-            for (const variant of variants) {
-                if (this.totalReceived > 0) break;
-                success = await forceWrite(variant.cmd, variant.name);
-                if (success) await new Promise(r => setTimeout(r, 2500));
-            }
+            // Eliminamos Fase 1 (RESET) y Fase 2 (WARMUP) porque el Bip U Pro las rechaza
+            this.log("Fase 1: Descarga Directa (2018 Timestamp)...", "ble");
+            const directFetch = new Uint8Array([0x01, 0x01, 0xE2, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
+            let success = await forceWrite(directFetch, "DIRECT_FETCH");
 
             if (!success && this.totalReceived === 0) {
-                this.log("Fase 1 completada sin respuesta inmediata. Entrando en modo espera (Triple-Handshake)...", "system");
+                this.log("Solicitud enviada. Entrando en modo espera (Triple-Handshake)...", "system");
             }
 
-            this.log("Patch completado. Esperando flujo de datos...", "system");
+            this.log("Deep Freeze completado. Esperando flujo de datos...", "system");
         } catch (err) {
             this.log(`ERROR crítico de sincronización: ${err.message}`, "error");
             this.log("TIP: Reinicia el Bluetooth y cierra Zepp/Notify de fondo.", "system");
@@ -371,7 +345,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.2.7";
+            const APP_VERSION = "1.2.8";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -480,11 +454,11 @@ class AmazfitDevice {
     }
 
     async _retryWithExtendedCommand() {
-        this.log("Pausa de seguridad Ghost+ (1.5s)...", "system");
+        this.log("Pausa de seguridad Deep Freeze (1.5s)...", "system");
         await new Promise(r => setTimeout(r, 1500));
 
-        this.log("Fase 2: Modo Compatibilidad (Full Sync 1.2.7)...", "system");
-        const extendedCmd = new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        this.log("Fase 2: Modo Compatibilidad (Direct 1.2.8)...", "system");
+        const extendedCmd = new Uint8Array([0x01, 0x01, 0xE2, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
         await this._safeWrite(extendedCmd, "FULL_SYNC", 5);
     }
 
@@ -502,22 +476,18 @@ class AmazfitDevice {
         for (let attempt = 1; attempt <= retries; attempt++) {
             for (const char of chars) {
                 try {
-                    // Protocolo Ghost: Pre-read flush para limpiar el canal
-                    try { await char.readValue(); } catch (e) { }
-
-                    // Pausa extra para estabilizar tensión en el stack BLE del reloj
-                    await new Promise(r => setTimeout(r, 200));
-
-                    this.log(`Ghost [${label}] -> ${char.uuid.slice(-4)} (${attempt}/${retries})...`, "ble");
+                    // Deep Freeze 1.2.8: Eliminamos readValue() para no saturar al Bip U Pro
+                    this.log(`Sync [${label}] -> ${char.uuid.slice(-4)} (${attempt}/${retries})...`, "ble");
                     await char.writeValue(data);
                     return true;
                 } catch (e) {
                     if (attempt < retries) {
                         try {
+                            // Intento desesperado sin respuesta
                             await char.writeValueWithoutResponse(data);
                             return true;
                         } catch (e2) {
-                            this.log(`GATT Busy. Esperando ${800 * attempt}ms...`, "ble");
+                            this.log(`GATT Ocupado. Reintento en ${800 * attempt}ms...`, "ble");
                             await new Promise(r => setTimeout(r, 800 * attempt));
                         }
                     }
