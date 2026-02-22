@@ -103,6 +103,24 @@ class AmazfitDevice {
                             if (p.indicate) propList.push("INDICATE");
 
                             this.log(`Char: ${c.uuid.substring(0, 8)}... [${propList.join('|')}]`, "ble");
+
+                            // v1.3.9: Detección Adaptativa de canal de mando
+                            // Si 0005 no tiene escritura, buscamos alternativas en fee0
+                            if (c.uuid === FETCH_CONTROL_ID) {
+                                if (p.write || p.writeWithoutResponse) {
+                                    this.fetchControlChar = c;
+                                } else {
+                                    this.log("AVISO: Característica 05 sin permisos de escritura. Buscando alternativa...", "system");
+                                }
+                            }
+
+                            // Si aún no tenemos control char pero esta tiene escritura y es del servicio fee0
+                            if (!this.fetchControlChar && (p.write || p.writeWithoutResponse) && s.uuid === HUAMI_SERVICE_ID) {
+                                if (c.uuid === '00000001-0000-3512-2118-0009af100700' || c.uuid === '00000003-0000-3512-2118-0009af100700') {
+                                    this.fetchControlChar = c;
+                                    this.log(`¡Canal de mando adaptativo asignado a: ${c.uuid.substring(0, 8)}!`, "system");
+                                }
+                            }
                         }
                     } catch (err) { }
                 }
@@ -116,9 +134,11 @@ class AmazfitDevice {
             throw new Error("No se ha podido encontrar la característica de Autenticación (0009).");
         }
 
-        // Fallback dinámico basado en UUIDs
-        if (!this.fetchControlChar) this.fetchControlChar = this.fetchDataChar;
-        if (!this.fetchDataChar) this.fetchDataChar = this.fetchControlChar;
+        // Fallback dinámico basado en UUIDs v1.3.9: Si no hay control char, usamos data char como última opción
+        if (!this.fetchControlChar) {
+            this.log("USANDO DATA CHAR COMO FALLBACK DE CONTROL...", "error");
+            this.fetchControlChar = this.fetchDataChar;
+        }
 
         if (!this.fetchControlChar) {
             this.log("AVISO: No se encontró FetchChar. El sync no funcionará.", "error");
@@ -282,11 +302,11 @@ class AmazfitDevice {
                 } catch (e) { }
             }
 
-            // ESCAPE TÉRMICO v1.3.8 (10s): Silencio absoluto para vaciar buffers
-            this.log("Escape Térmico (10s): Vaciando buffers de hardware...", "system");
-            await new Promise(r => setTimeout(r, 10000));
+            // ESCAPE TÉRMICO v1.3.9 (15s): Máximo margen para reset de driver
+            this.log("Escape Térmico Estelar (15s): Silencio de radio absoluto...", "system");
+            await new Promise(r => setTimeout(r, 15000));
 
-            // HARD RESET DE CANALES v1.3.8
+            // HARD RESET DE CANALES v1.3.8/9
             this.log("Hard Reset: Reiniciando canales de comunicación...", "ble");
             try {
                 await this.fetchDataChar.stopNotifications();
@@ -294,22 +314,22 @@ class AmazfitDevice {
                     await this.fetchControlChar.stopNotifications();
                 }
             } catch (e) { }
-            await new Promise(r => setTimeout(r, 2000));
+            await new Promise(r => setTimeout(r, 3000));
 
-            this.log("Habilitando Canal DATA (04) [VOID]...", "ble");
+            this.log("Habilitando Canal DATA (04) [STELLAR]...", "ble");
             await this.fetchDataChar.startNotifications();
-            await new Promise(r => setTimeout(r, 2000));
+            await new Promise(r => setTimeout(r, 3000));
 
             if (this.fetchControlChar && this.fetchControlChar.uuid !== this.fetchDataChar.uuid) {
-                this.log("Habilitando Canal CTRL (05) [VOID]...", "ble");
+                this.log(`Habilitando Canal CTRL (${this.fetchControlChar.uuid.substring(6, 8)}) [STELLAR]...`, "ble");
                 try { await this.fetchControlChar.startNotifications(); } catch (e) { }
-                await new Promise(r => setTimeout(r, 2000));
+                await new Promise(r => setTimeout(r, 5000));
             }
 
-            // SECUENCIA ATÓMICA v1.3.8: Fases secuenciales forzadas
+            // SECUENCIA ATÓMICA v1.3.9: Fases secuenciales adaptativas
 
-            // Fase 1: Descarga Directa (Fire & Forget)
-            this.log("Fase 1: Descarga Directa [VOID]...", "ble");
+            // Fase 1: Descarga Directa
+            this.log("Fase 1: Descarga Directa (Detección Adaptativa)...", "ble");
             const directFetch = new Uint8Array([0x01, 0x01, 0xE2, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
             let success = await this._safeWrite(directFetch, "DIRECT_FETCH", 20, this.fetchControlChar);
 
@@ -355,7 +375,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.8";
+            const APP_VERSION = "1.3.9";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -509,32 +529,44 @@ class AmazfitDevice {
 
         this.isWriting = true;
         try {
-            // v1.3.7: Monocanal Absoluto con recuperación térmica
+            // v1.3.9: Escritura Adaptativa según propiedades detectadas
             const char = forceChar || this.fetchControlChar;
-            const charLabel = (char === this.fetchControlChar) ? "CTRL (05)" : "DATA (04)";
+            const p = char.properties;
+            const canWriteNoResp = p.writeWithoutResponse;
+            const canWriteWithResp = p.write;
+
+            const charLabel = `Canal ${char.uuid.substring(6, 8)}`;
 
             for (let attempt = 1; attempt <= retries; attempt++) {
                 try {
-                    // Pausa de estabilización v1.3.7: 750ms para desaturar el chip
-                    await new Promise(r => setTimeout(r, 750));
+                    // Pausa de estabilización v1.3.9: 1s para desaturar el chip
+                    await new Promise(r => setTimeout(r, 1000));
 
-                    this.log(`Sync [${label}] -> ${charLabel} (${attempt}/${retries})...`, "ble");
+                    this.log(`Sync [${label}] -> ${charLabel} (Intento ${attempt}/${retries})...`, "ble");
 
-                    // v1.3.8: "Fire & Forget" - Usamos writeWithoutResponse como primera opción
-                    // Esto evita el bloqueo del driver de Bluetooth en Windows (GATT Busy)
-                    await char.writeValueWithoutResponse(data);
+                    if (canWriteNoResp) {
+                        // Prioridad v1.3.8/9: Fire & Forget para evitar bloqueo de driver
+                        await char.writeValueWithoutResponse(data);
+                    } else if (canWriteWithResp) {
+                        await char.writeValue(data);
+                    } else {
+                        throw new Error("Característica sin permisos de escritura.");
+                    }
                     return true;
                 } catch (e) {
                     if (attempt < retries) {
+                        // v1.3.9: Cooldown ampliado a 3s para liberar el driver de Windows
+                        this.log(`GATT Busy en ${charLabel}. Cooldown Estelar (3s)...`, "ble");
+                        await new Promise(r => setTimeout(r, 3000));
+
+                        // Intento de fallback cruzado si falló el método principal
                         try {
-                            // Intento desesperado con respuesta si lo anterior falló
-                            await char.writeValue(data);
-                            return true;
-                        } catch (e2) {
-                            // v1.3.7: Aumentamos a 2.5s para que el SO limpie el bus
-                            this.log(`GATT Busy en ${charLabel}. Calma Térmica (2.5s)...`, "ble");
-                            await new Promise(r => setTimeout(r, 2500));
-                        }
+                            if (canWriteWithResp && canWriteNoResp) {
+                                this.log("Probando método de escritura alternativo...", "ble");
+                                await char.writeValue(data);
+                                return true;
+                            }
+                        } catch (e2) { }
                     }
                 }
             }
