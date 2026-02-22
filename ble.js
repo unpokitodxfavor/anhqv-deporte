@@ -261,32 +261,32 @@ class AmazfitDevice {
         // Iniciar Watchdog Triple-Handshake (v1.2.4)
         if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
 
-        // Fase 2 (10s): Si no hay datos, intentar handshake silencioso
+        // Fase 2 (15s): Si no hay datos, intentar handshake silencioso
         const phase2Timeout = setTimeout(async () => {
             if (this.totalReceived === 0) {
-                this.log("Fase 1 silenciosa. Intentando Handshake Secundario (10-bytes)...", "system");
+                this.log("Fase 1 silenciosa (15s). Intentando Handshake Secundario (10-bytes)...", "system");
                 const secondaryCmd = new Uint8Array([0x01, 0x01, 0xE8, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]);
                 await this._safeWrite(secondaryCmd, "SECONDARY");
             }
-        }, 10000);
+        }, 15000);
 
-        // Fase 3 (25s): Última oportunidad con Autorización de Emergencia
+        // Fase 3 (30s): Última oportunidad con Autorización de Emergencia
         const phase3Timeout = setTimeout(async () => {
             if (this.totalReceived === 0) {
-                this.log("Fase 2 silenciosa. Intentando Autorización de Emergencia...", "error");
+                this.log("Fase 2 silenciosa (30s). Intentando Autorización de Emergencia v2...", "error");
                 await this._forceAuthorizeFetch();
             }
-        }, 25000);
+        }, 30000);
 
-        // Watchdog Final (50s): Rendición
+        // Watchdog Final (55s): Rendición
         this.syncWatchdog = setTimeout(() => {
             if (this.totalReceived === 0) {
-                this.log("Fallo definitivo: El reloj no ha respondido tras 3 fases.", "error");
+                this.log("Fallo definitivo: El reloj no ha respondido tras 3 fases de rescate.", "error");
                 this._finalizeSync();
             }
             clearTimeout(phase2Timeout);
             clearTimeout(phase3Timeout);
-        }, 50000);
+        }, 55000);
 
         if (!this.fetchControlChar) {
             throw new Error("Característica de control no encontrada. El sync no es posible.");
@@ -371,7 +371,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.2.4";
+            const APP_VERSION = "1.2.5";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -506,41 +506,33 @@ class AmazfitDevice {
         if (!(ackCmd instanceof Uint8Array)) {
             ackCmd = new Uint8Array([ackCmd]);
         }
-
-        try {
-            const char = this.lastWorkingChar || this.fetchControlChar;
-            if (!char) return;
-
-            // PRIORIDAD A WithoutResponse PARA MÁXIMA VELOCIDAD
-            try {
-                await char.writeValueWithoutResponse(ackCmd);
-            } catch (e) {
-                await char.writeValue(ackCmd);
-            }
-        } catch (err) {
-            // Silencioso durante el sync para no frenar el proceso
-            if (this.totalReceived === 0) console.error("Error ACK:", err.message);
-        }
+        // Usar _safeWrite para los ACKs críticos durante negociación
+        await this._safeWrite(ackCmd, "ACK", 2);
     }
 
-    async _safeWrite(data, label, retries = 3) {
+    async _safeWrite(data, label, retries = 5) {
         const chars = [this.fetchControlChar, this.fetchDataChar].filter((c, i, a) => c && a.indexOf(c) === i);
 
         for (let attempt = 1; attempt <= retries; attempt++) {
+            // Wake-up Ping antes de cada intento crítico
+            if (attempt > 1 && this.authChar) {
+                try { await this.authChar.readValue(); } catch (e) { }
+            }
+
             for (const char of chars) {
                 try {
-                    this.log(`Enviando [${label}] a ${char.uuid.slice(-4)} (Intento ${attempt})...`, "ble");
+                    this.log(`Enviando [${label}] a ${char.uuid.slice(-4)} (Intento ${attempt}/${retries})...`, "ble");
                     await char.writeValue(data);
                     return true;
                 } catch (e) {
-                    if (e.message.includes("GATT") || attempt < retries) {
+                    if (attempt < retries) {
                         try {
-                            // Fallback inmediato a writeWithoutResponse
                             await char.writeValueWithoutResponse(data);
                             return true;
                         } catch (e2) {
-                            this.log(`Reintento en ${char.uuid.slice(-4)} tras fallo: ${e2.message}`, "ble");
-                            await new Promise(r => setTimeout(r, 500));
+                            this.log(`Reintento ${attempt} falló: ${e2.message}`, "ble");
+                            // Backoff exponencial: 500ms, 1000ms, 1500ms...
+                            await new Promise(r => setTimeout(r, 500 * attempt));
                         }
                     }
                 }
@@ -550,19 +542,10 @@ class AmazfitDevice {
     }
 
     async _forceAuthorizeFetch() {
-        this.log("Enviando comando de Emergencia (10-bytes)...", "system");
-        try {
-            // Variante 0x01 0x01 + 8 bytes de 0x01 (Fetch Everything Force)
-            const authFetch = new Uint8Array([0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01]);
-            const char = this.fetchControlChar || this.fetchDataChar;
-            try {
-                await char.writeValue(authFetch);
-            } catch (e) {
-                await char.writeValueWithoutResponse(authFetch);
-            }
-        } catch (e) {
-            this.log(`Fallo crítico en emergencia: ${e.message}`, "error");
-        }
+        this.log("Enviando comando de Emergencia v2 (Null Timestamp)...", "system");
+        // Variante 0x01 0x01 + 8 bytes de 0x00 (Soft Fetch Force)
+        const authFetch = new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        await this._safeWrite(authFetch, "EMERGENCY_V2", 5);
     }
 
     async _syncTime() {

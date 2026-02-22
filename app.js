@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.2.4";
+    const APP_VERSION = "1.2.5";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -132,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     refreshBtn.addEventListener('click', async () => {
-        showLoading('Sincronizando (Patch v1.2.4)...');
+        showLoading('Iniciando Parche de Resistencia (v1.2.5)...');
 
         // Chronos Timeout: 60 seconds (ample time for triple-handshake)
         const safetyHatch = setTimeout(() => {
