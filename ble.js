@@ -78,11 +78,9 @@ class AmazfitDevice {
 
             try {
                 this.authChar = await this.service.getCharacteristic(AUTH_CHAR_ID);
-                this.fetchControlChar = await this.service.getCharacteristic(FETCH_CONTROL_ID);
-                this.fetchDataChar = await this.service.getCharacteristic(FETCH_DATA_ID);
-                this.log("Características de Auth, Control y Data listas en 0xFEE0.", "ble");
-            } catch (e) {
-                this.log("Faltan características en 0xFEE0. Iniciando escaneo profundo...", "system");
+                this.log("Característica de Auth lista en 0xFEE0.", "ble");
+
+                this.log("Iniciando escaneo profundo de canales de mando y datos...", "system");
                 const services = await this.server.getPrimaryServices();
 
                 for (const s of services) {
@@ -90,10 +88,8 @@ class AmazfitDevice {
                         const chars = await s.getCharacteristics();
                         for (const c of chars) {
                             if (c.uuid === AUTH_CHAR_ID) this.authChar = c;
-                            if (c.uuid === FETCH_CONTROL_ID) this.fetchControlChar = c;
-                            if (c.uuid === FETCH_DATA_ID) this.fetchDataChar = c;
 
-                            // Log descriptivo de propiedades v1.3.7
+                            // v1.3.10: NO ASIGNAMOS POR UUID DIRECTAMENTE. Verificamos propiedades.
                             const p = c.properties;
                             const propList = [];
                             if (p.read) propList.push("READ");
@@ -104,19 +100,28 @@ class AmazfitDevice {
 
                             this.log(`Char: ${c.uuid.substring(0, 8)}... [${propList.join('|')}]`, "ble");
 
-                            // v1.3.9: Detección Adaptativa de canal de mando
-                            // Si 0005 no tiene escritura, buscamos alternativas en fee0
+                            // Detección de Canal de DATA (04)
+                            if (c.uuid === FETCH_DATA_ID) {
+                                this.fetchDataChar = c;
+                                this.log("Canal de DATA (04) verificado.", "ble");
+                            }
+
+                            // Detección Adaptativa de canal de mando (MANDATORIA v1.3.10)
+                            // Si es 05, solo la aceptamos si tiene permisos de ESCRITURA
                             if (c.uuid === FETCH_CONTROL_ID) {
                                 if (p.write || p.writeWithoutResponse) {
                                     this.fetchControlChar = c;
+                                    this.log("Canal de Mando (05) verificado con permisos de escritura.", "ble");
                                 } else {
-                                    this.log("AVISO: Característica 05 sin permisos de escritura. Buscando alternativa...", "system");
+                                    this.log("AVISO: Canal 05 detectado pero es SOLO NOTIFICACIÓN. Ignorando como mando...", "system");
                                 }
                             }
 
-                            // Si aún no tenemos control char pero esta tiene escritura y es del servicio fee0
+                            // Si aún no tenemos mando, buscamos en 01 o 03 (o 04 como fallback)
                             if (!this.fetchControlChar && (p.write || p.writeWithoutResponse) && s.uuid === HUAMI_SERVICE_ID) {
-                                if (c.uuid === '00000001-0000-3512-2118-0009af100700' || c.uuid === '00000003-0000-3512-2118-0009af100700') {
+                                if (c.uuid === '00000001-0000-3512-2118-0009af100700' ||
+                                    c.uuid === '00000003-0000-3512-2118-0009af100700' ||
+                                    c.uuid === FETCH_DATA_ID) {
                                     this.fetchControlChar = c;
                                     this.log(`¡Canal de mando adaptativo asignado a: ${c.uuid.substring(0, 8)}!`, "system");
                                 }
@@ -124,6 +129,9 @@ class AmazfitDevice {
                         }
                     } catch (err) { }
                 }
+            } catch (e) {
+                this.log(`Fallo grave en descubrimiento de canales: ${e.message}`, "error");
+                throw e;
             }
         } catch (globalErr) {
             this.log(`Error crítico en descubrimiento: ${globalErr.message}`, "error");
@@ -134,10 +142,13 @@ class AmazfitDevice {
             throw new Error("No se ha podido encontrar la característica de Autenticación (0009).");
         }
 
-        // Fallback dinámico basado en UUIDs v1.3.9: Si no hay control char, usamos data char como última opción
+        // v1.3.10: Finalización de asignación
+        if (!this.fetchDataChar) {
+            this.log("¡ADVERTENCIA! No se encontró canal de DATA (04). Usando canal de mando como canal de escucha.", "error");
+            this.fetchDataChar = this.fetchControlChar;
+        }
         if (!this.fetchControlChar) {
-            this.log("USANDO DATA CHAR COMO FALLBACK DE CONTROL...", "error");
-            this.fetchControlChar = this.fetchDataChar;
+            this.log("¡ADVERTENCIA! No se encontró ningún canal con permisos de escritura. El sync fallará.", "error");
         }
 
         if (!this.fetchControlChar) {
@@ -302,9 +313,9 @@ class AmazfitDevice {
                 } catch (e) { }
             }
 
-            // ESCAPE TÉRMICO v1.3.9 (15s): Máximo margen para reset de driver
-            this.log("Escape Térmico Estelar (15s): Silencio de radio absoluto...", "system");
-            await new Promise(r => setTimeout(r, 15000));
+            // ESCAPE TÉRMICO v1.3.10 (20s): Silencio absoluto para liberar driver de Windows
+            this.log("Arranque en Frío (20s): Limpiando stack de Bluetooth de Windows...", "system");
+            await new Promise(r => setTimeout(r, 20000));
 
             // HARD RESET DE CANALES v1.3.8/9
             this.log("Hard Reset: Reiniciando canales de comunicación...", "ble");
@@ -375,7 +386,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.9";
+            const APP_VERSION = "1.3.10";
             const cmdReply = data[1];
             const status = data[2];
 

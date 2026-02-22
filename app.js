@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.3.9";
+    const APP_VERSION = "1.3.10";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -148,9 +148,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     refreshBtn.addEventListener('click', async () => {
-        showLoading('Flujo Viento Estelar v1.3.9 (Detección Adaptativa)...');
+        showLoading('Flujo de Pulsar v1.3.10 (Recuperación Absoluta)...');
 
-        // Chronos Timeout: 60 seconds (ample time for triple-handshake)
+        // Chronos Timeout v1.3.10: 90 seconds (to compensate for 20s escape)
         const safetyHatch = setTimeout(() => {
             if (loadingOverlay.style.display !== 'none') {
                 log("TIMEOUT CHRONOS: La sincronización ha tardado más de 1 minuto. Desbloqueando UI.", "error");
