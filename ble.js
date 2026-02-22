@@ -370,7 +370,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.5";
+            const APP_VERSION = "1.3.6";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -386,8 +386,9 @@ class AmazfitDevice {
             }
 
             if (cmdReply === 0x01 && status === 0x02) {
-                this.log("Rechazo 0x01. Iniciando modo de compatibilidad (Full Sync)...", "error");
-                this._retryWithExtendedCommand();
+                this.log("Rechazo 0x01. Iniciando modo de compatibilidad (Full Sync) tras 2s...", "error");
+                // v1.3.6: Cool-down post-rechazo para no saturar al reloj
+                setTimeout(() => this._retryWithExtendedCommand(), 2000);
                 return;
             }
 
@@ -502,43 +503,20 @@ class AmazfitDevice {
 
         this.log("Fase 2: Modo Compatibilidad (Direct 1.2.8)...", "system");
         const extendedCmd = new Uint8Array([0x01, 0x01, 0xE2, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
-        await this._safeWrite(extendedCmd, "FULL_SYNC", 5);
+        // v1.3.6: Forzamos canal 05 con disciplina estricta
+        await this._safeWrite(extendedCmd, "FULL_SYNC", 10, this.fetchControlChar);
     }
 
     async _sendSyncAck(ackCmd, withoutResponse = true) {
         if (!(ackCmd instanceof Uint8Array)) {
             ackCmd = new Uint8Array([ackCmd]);
         }
-        // v1.3.4: Aseguramos el prefijo 01 si no lo tiene
-        if (ackCmd.length === 2 && ackCmd[0] === 0x02) {
-            const newAck = new Uint8Array(3);
-            newAck[0] = 0x01;
-            newAck[1] = 0x02;
-            newAck[2] = ackCmd[1];
-            ackCmd = newAck;
-        }
-
-        // v1.3.3: Prioridad absoluta al modo 'sin respuesta' para evitar bloqueos Busy
-        if (withoutResponse) {
-            try {
-                // v1.3.3: Probamos ambos canales para asegurar que el ACK llegue sin colisión
-                const chars = [this.fetchControlChar, this.fetchDataChar].filter(c => c);
-                for (const char of chars) {
-                    try {
-                        await char.writeValueWithoutResponse(ackCmd);
-                        const label = (char === this.fetchControlChar) ? "CTRL (05)" : "DATA (04)";
-                        this.log(`ACK_NEBULA -> ${label}`, "ble");
-                        return;
-                    } catch (e) { continue; }
-                }
-            } catch (e) {
-                this.log("Fallo en ACK_NEBULA, reintentando por vía segura...", "ble");
-            }
-        }
-        await this._safeWrite(ackCmd, "ACK_SECURE", 2);
+        // v1.3.6: ACKs exclusivamente por el canal de mando (05)
+        // El canal 04 es SOLO para recibir datos.
+        await this._safeWrite(ackCmd, "ACK_NEBULA", 10, this.fetchControlChar);
     }
 
-    async _safeWrite(data, label, retries = 10, forceChar = null) {
+    async _safeWrite(data, label, retries = 15, forceChar = null) {
         // v1.3.2 - Mutex Estricto: Esperar lo que haga falta
         while (this.isWriting) {
             await new Promise(r => setTimeout(r, 100));
@@ -546,29 +524,27 @@ class AmazfitDevice {
 
         this.isWriting = true;
         try {
-            // v1.3.5: Si forceChar existe (para comandos críticos), no hunteamos canales
-            const chars = forceChar ? [forceChar] : [this.fetchControlChar, this.fetchDataChar].filter((c, i, a) => c && a.indexOf(c) === i);
+            // v1.3.6: Monocanal Absoluto (05). Eliminamos fallback a canal 04 para envíos.
+            const char = forceChar || this.fetchControlChar;
+            const charLabel = (char === this.fetchControlChar) ? "CTRL (05)" : "DATA (04)";
 
             for (let attempt = 1; attempt <= retries; attempt++) {
-                for (const char of chars) {
-                    const charLabel = (char === this.fetchControlChar) ? "CTRL (05)" : "DATA (04)";
-                    try {
-                        // Pausa de estabilización 1.3.3: Dar tiempo al hardware
-                        await new Promise(r => setTimeout(r, 450));
+                try {
+                    // Pausa de estabilización 1.3.6: Dar tiempo al hardware (medio segundo)
+                    await new Promise(r => setTimeout(r, 500));
 
-                        this.log(`Sync [${label}] -> ${charLabel} (${attempt}/${retries})...`, "ble");
-                        await char.writeValue(data);
-                        return true;
-                    } catch (e) {
-                        if (attempt < retries) {
-                            try {
-                                // Fallback a sin-respuesta si el WRITE falla (GATT Busy)
-                                await char.writeValueWithoutResponse(data);
-                                return true;
-                            } catch (e2) {
-                                this.log(`GATT Busy en ${charLabel}. Reintento en 750ms...`, "ble");
-                                await new Promise(r => setTimeout(r, 750));
-                            }
+                    this.log(`Sync [${label}] -> ${charLabel} (${attempt}/${retries})...`, "ble");
+                    await char.writeValue(data);
+                    return true;
+                } catch (e) {
+                    if (attempt < retries) {
+                        try {
+                            // Fallback a sin-respuesta si el WRITE falla (GATT Busy)
+                            await char.writeValueWithoutResponse(data);
+                            return true;
+                        } catch (e2) {
+                            this.log(`GATT Busy en ${charLabel}. Reintento en 1000ms...`, "ble");
+                            await new Promise(r => setTimeout(r, 1000));
                         }
                     }
                 }
