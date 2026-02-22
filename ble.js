@@ -370,7 +370,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.3";
+            const APP_VERSION = "1.3.4";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -411,9 +411,11 @@ class AmazfitDevice {
 
             // Detección de peticiones de ACK del reloj (10 02 XX)
             if (cmdReply === 0x02) {
-                this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo (Stealth)...`, "ble");
-                // v1.3.2: ACK inmediato sin esperar al Mutex para no frenar al reloj
-                this._sendSyncAck(new Uint8Array([0x02, status]), true);
+                this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo (Nebula) en 200ms...`, "ble");
+                // v1.3.4: Prefijo 01 y pequeño delay para que el reloj respire
+                setTimeout(() => {
+                    this._sendSyncAck(new Uint8Array([0x01, 0x02, status]), true);
+                }, 200);
                 return;
             }
 
@@ -424,8 +426,9 @@ class AmazfitDevice {
         // Cabecera v2 detectada
         if (isHeader && data[1] === 0x01) {
             const lastByte = data[14];
-            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Iniciando transferencia...`, "ble");
-            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, lastByte])), 250);
+            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Iniciando transferencia (Nebula)...`, "ble");
+            // v1.3.4: Prefijo 01 y delay para la cabecera también
+            setTimeout(() => this._sendSyncAck(new Uint8Array([0x01, 0x02, lastByte]), true), 200);
             return; // No acumulamos la cabecera en el buffer de datos
         }
 
@@ -433,6 +436,12 @@ class AmazfitDevice {
         this.activityChunks.push(data);
         const oldTotal = this.totalReceived;
         this.totalReceived += data.length;
+
+        // v1.3.4: Log de chunks de datos (solo cada 1KB para no saturar el log)
+        if (Math.floor(this.totalReceived / 1024) > Math.floor(oldTotal / 1024)) {
+            const preview = data.length > 4 ? Array.from(data.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ') : "";
+            this.log(`[DATA] Recibido: ${(this.totalReceived / 1024).toFixed(1)} KB (Last: ${data.length}b, Hex: ${preview})`, "ble");
+        }
 
         // ACK PROGRESIVO: Si no enviamos nada, el reloj se pausa cada 2-4KB.
         // Enviamos un confirmador ligero cada 2KB para mantener el flujo abierto.
@@ -500,6 +509,15 @@ class AmazfitDevice {
         if (!(ackCmd instanceof Uint8Array)) {
             ackCmd = new Uint8Array([ackCmd]);
         }
+        // v1.3.4: Aseguramos el prefijo 01 si no lo tiene
+        if (ackCmd.length === 2 && ackCmd[0] === 0x02) {
+            const newAck = new Uint8Array(3);
+            newAck[0] = 0x01;
+            newAck[1] = 0x02;
+            newAck[2] = ackCmd[1];
+            ackCmd = newAck;
+        }
+
         // v1.3.3: Prioridad absoluta al modo 'sin respuesta' para evitar bloqueos Busy
         if (withoutResponse) {
             try {
@@ -509,12 +527,12 @@ class AmazfitDevice {
                     try {
                         await char.writeValueWithoutResponse(ackCmd);
                         const label = (char === this.fetchControlChar) ? "CTRL (05)" : "DATA (04)";
-                        this.log(`ACK_STEALTH -> ${label}`, "ble");
+                        this.log(`ACK_NEBULA -> ${label}`, "ble");
                         return;
                     } catch (e) { continue; }
                 }
             } catch (e) {
-                this.log("Fallo en ACK_STEALTH, reintentando por vía segura...", "ble");
+                this.log("Fallo en ACK_NEBULA, reintentando por vía segura...", "ble");
             }
         }
         await this._safeWrite(ackCmd, "ACK_SECURE", 2);
@@ -548,8 +566,8 @@ class AmazfitDevice {
                                 await char.writeValueWithoutResponse(data);
                                 return true;
                             } catch (e2) {
-                                this.log(`GATT Busy en ${charLabel}. Reintento en 500ms...`, "ble");
-                                await new Promise(r => setTimeout(r, 500));
+                                this.log(`GATT Busy en ${charLabel}. Reintento en 250ms...`, "ble");
+                                await new Promise(r => setTimeout(r, 250));
                             }
                         }
                     }
