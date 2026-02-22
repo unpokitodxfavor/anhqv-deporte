@@ -370,7 +370,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.2";
+            const APP_VERSION = "1.3.3";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -500,16 +500,19 @@ class AmazfitDevice {
         if (!(ackCmd instanceof Uint8Array)) {
             ackCmd = new Uint8Array([ackCmd]);
         }
-        // v1.3.2: Prioridad absoluta al modo 'sin respuesta' para evitar bloqueos Busy
+        // v1.3.3: Prioridad absoluta al modo 'sin respuesta' para evitar bloqueos Busy
         if (withoutResponse) {
             try {
-                // v1.3.2: Enviamos SIEMPRE por el canal de control (05) para evitar choques
-                const char = this.fetchControlChar || this.fetchDataChar;
-                if (char) {
-                    await char.writeValueWithoutResponse(ackCmd);
-                    this.log(`ACK_STEALTH -> ${char.uuid.slice(0, 8)}`, "ble");
+                // v1.3.3: Probamos ambos canales para asegurar que el ACK llegue sin colisión
+                const chars = [this.fetchControlChar, this.fetchDataChar].filter(c => c);
+                for (const char of chars) {
+                    try {
+                        await char.writeValueWithoutResponse(ackCmd);
+                        const label = (char === this.fetchControlChar) ? "CTRL (05)" : "DATA (04)";
+                        this.log(`ACK_STEALTH -> ${label}`, "ble");
+                        return;
+                    } catch (e) { continue; }
                 }
-                return;
             } catch (e) {
                 this.log("Fallo en ACK_STEALTH, reintentando por vía segura...", "ble");
             }
@@ -525,16 +528,17 @@ class AmazfitDevice {
 
         this.isWriting = true;
         try {
-            // v1.3.2: Concentramos fuerzas en el canal de CONTROL (05). Solo usamos el de datos si el de control no existe.
-            const chars = [this.fetchControlChar || this.fetchDataChar].filter(c => c);
+            // v1.3.3: Volvemos a la estrategia de "Caza Dual": probar Control (05) y Datos (04) secuencialmente
+            const chars = [this.fetchControlChar, this.fetchDataChar].filter((c, i, a) => c && a.indexOf(c) === i);
 
             for (let attempt = 1; attempt <= retries; attempt++) {
                 for (const char of chars) {
+                    const charLabel = (char === this.fetchControlChar) ? "CTRL (05)" : "DATA (04)";
                     try {
-                        // Pausa de estabilización 1.3.2: Dar tiempo al hardware
+                        // Pausa de estabilización 1.3.3: Dar tiempo al hardware
                         await new Promise(r => setTimeout(r, 450));
 
-                        this.log(`Sync [${label}] -> ${char.uuid.slice(0, 8)} (${attempt}/${retries})...`, "ble");
+                        this.log(`Sync [${label}] -> ${charLabel} (${attempt}/${retries})...`, "ble");
                         await char.writeValue(data);
                         return true;
                     } catch (e) {
@@ -544,8 +548,8 @@ class AmazfitDevice {
                                 await char.writeValueWithoutResponse(data);
                                 return true;
                             } catch (e2) {
-                                this.log(`GATT Busy (${attempt}). Reintento en 1000ms...`, "ble");
-                                await new Promise(r => setTimeout(r, 1000));
+                                this.log(`GATT Busy en ${charLabel}. Reintento en 500ms...`, "ble");
+                                await new Promise(r => setTimeout(r, 500));
                             }
                         }
                     }
