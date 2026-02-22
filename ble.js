@@ -28,6 +28,7 @@ class AmazfitDevice {
         this.lastUiUpdate = 0;
         this.syncWatchdog = null; // Watchdog para el primer paquete de sync
         this.syncTimeout = null; // Watchdog para la inactividad durante el sync
+        this.isWriting = false; // Semáforo v1.3.0: Evita colisiones de escritura BLE
         this.log = (msg, type) => console.log(msg);
     }
 
@@ -368,19 +369,26 @@ class AmazfitDevice {
 
             if (cmdReply === 0x03 && status === 0x01) {
                 this.log("Puerta 0x03 abierta. Disparando 0x05...", "ble");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x05])), 150);
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x05])), 250);
                 return;
             }
 
             if (cmdReply === 0x05 && status === 0x02) {
                 this.log("Rechazo 0x05. Probando 0x04...", "error");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x04])), 150);
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x04])), 250);
                 return;
             }
 
             if (cmdReply === 0x04 && status === 0x02) {
                 this.log("Rechazo 0x04. Probando 0x01...", "error");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x01])), 150);
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x01])), 250);
+                return;
+            }
+
+            // Detección de peticiones de ACK del reloj (10 02 XX)
+            if (cmdReply === 0x02) {
+                this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo...`, "ble");
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, status])), 250);
                 return;
             }
 
@@ -392,7 +400,7 @@ class AmazfitDevice {
         if (isHeader && data[1] === 0x01) {
             const lastByte = data[14];
             this.log(`Cabecera v2 detectada (Index: ${lastByte}). Iniciando transferencia...`, "ble");
-            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, lastByte])), 150);
+            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, lastByte])), 250);
             return; // No acumulamos la cabecera en el buffer de datos
         }
 
@@ -404,7 +412,7 @@ class AmazfitDevice {
         // ACK PROGRESIVO: Si no enviamos nada, el reloj se pausa cada 2-4KB.
         // Enviamos un confirmador ligero cada 2KB para mantener el flujo abierto.
         if (Math.floor(this.totalReceived / 2048) > Math.floor(oldTotal / 2048)) {
-            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02])), 150);
+            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02])), 250);
         }
 
         // Throttling y Detección de Inactividad
@@ -466,36 +474,49 @@ class AmazfitDevice {
         if (!(ackCmd instanceof Uint8Array)) {
             ackCmd = new Uint8Array([ackCmd]);
         }
-        // v1.2.9: Pausa de cortesía para que el Bip U Pro procese el cambio de modo
+        // v1.3.0: Pausa aumentada para estabilidad atómica
         await this._safeWrite(ackCmd, "ACK", 2);
     }
 
     async _safeWrite(data, label, retries = 10) {
-        // v1.2.9: Solo escribimos en el canal de CONTROL (05) para evitar colisiones con el canal de DATOS (04)
-        const chars = [this.fetchControlChar].filter(c => c);
+        // v1.3.0 - Semáforo Atómico: Esperar si hay otra escritura en curso
+        let spinCount = 0;
+        while (this.isWriting && spinCount < 20) {
+            await new Promise(r => setTimeout(r, 50));
+            spinCount++;
+        }
 
-        for (let attempt = 1; attempt <= retries; attempt++) {
-            for (const char of chars) {
-                try {
-                    // Deep Freeze 1.2.8: Eliminamos readValue() para no saturar al Bip U Pro
-                    this.log(`Sync [${label}] -> ${char.uuid.slice(-2)} (${attempt}/${retries})...`, "ble");
-                    await char.writeValue(data);
-                    return true;
-                } catch (e) {
-                    if (attempt < retries) {
-                        try {
-                            // Intento desesperado sin respuesta
-                            await char.writeValueWithoutResponse(data);
-                            return true;
-                        } catch (e2) {
-                            this.log(`GATT Ocupado. Reintento en ${800 * attempt}ms...`, "ble");
-                            await new Promise(r => setTimeout(r, 800 * attempt));
+        this.isWriting = true;
+        try {
+            // v1.2.9: Solo escribimos en el canal de CONTROL (05) para evitar colisiones con el canal de DATOS (04)
+            const chars = [this.fetchControlChar].filter(c => c);
+
+            for (let attempt = 1; attempt <= retries; attempt++) {
+                for (const char of chars) {
+                    try {
+                        // Pausa de estabilización 1.3.0: Dar tiempo al buffer del reloj
+                        await new Promise(r => setTimeout(r, 400));
+
+                        this.log(`Sync [${label}] -> ${char.uuid.slice(-2)} (${attempt}/${retries})...`, "ble");
+                        await char.writeValue(data);
+                        return true;
+                    } catch (e) {
+                        if (attempt < retries) {
+                            try {
+                                await char.writeValueWithoutResponse(data);
+                                return true;
+                            } catch (e2) {
+                                this.log(`GATT Ocupado. Reintento en ${800 * attempt}ms...`, "ble");
+                                await new Promise(r => setTimeout(r, 800 * attempt));
+                            }
                         }
                     }
                 }
             }
+            return false;
+        } finally {
+            this.isWriting = false;
         }
-        return false;
     }
 
     async _forceAuthorizeFetch() {

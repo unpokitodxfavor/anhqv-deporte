@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.2.8";
+    const APP_VERSION = "1.3.0";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -148,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     refreshBtn.addEventListener('click', async () => {
-        showLoading('Congelación profunda activa (v1.2.8)...');
+        showLoading('Flujo Atómico v1.3.0 (Estabilizando descarga)...');
 
         // Chronos Timeout: 60 seconds (ample time for triple-handshake)
         const safetyHatch = setTimeout(() => {
