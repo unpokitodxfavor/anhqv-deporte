@@ -93,9 +93,16 @@ class AmazfitDevice {
                             if (c.uuid === FETCH_CONTROL_ID) this.fetchControlChar = c;
                             if (c.uuid === FETCH_DATA_ID) this.fetchDataChar = c;
 
-                            // Log descriptivo de propiedades
-                            const props = Object.keys(c.properties).filter(key => c.properties[key]);
-                            this.log(`Característica hallada: ${c.uuid.substring(0, 8)}... Props: [${props.join(', ')}]`, "ble");
+                            // Log descriptivo de propiedades v1.3.7
+                            const p = c.properties;
+                            const propList = [];
+                            if (p.read) propList.push("READ");
+                            if (p.write) propList.push("WRITE");
+                            if (p.writeWithoutResponse) propList.push("WRITE_NO_RESP");
+                            if (p.notify) propList.push("NOTIFY");
+                            if (p.indicate) propList.push("INDICATE");
+
+                            this.log(`Char: ${c.uuid.substring(0, 8)}... [${propList.join('|')}]`, "ble");
                         }
                     } catch (err) { }
                 }
@@ -259,35 +266,8 @@ class AmazfitDevice {
         this.totalReceived = 0;
         this.lastUiUpdate = 0;
 
-        // Iniciar Watchdog Triple-Handshake (v1.2.4)
         if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
-
-        // Fase 2 (15s): Si no hay datos, intentar handshake silencioso
-        const phase2Timeout = setTimeout(async () => {
-            if (this.totalReceived === 0) {
-                this.log("Fase 1 silenciosa (15s). Intentando Handshake Secundario (10-bytes)...", "system");
-                const secondaryCmd = new Uint8Array([0x01, 0x01, 0xE8, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]);
-                await this._safeWrite(secondaryCmd, "SECONDARY");
-            }
-        }, 15000);
-
-        // Fase 3 (30s): Última oportunidad con Autorización de Emergencia
-        const phase3Timeout = setTimeout(async () => {
-            if (this.totalReceived === 0) {
-                this.log("Fase 2 silenciosa (30s). Intentando Autorización de Emergencia v2...", "error");
-                await this._forceAuthorizeFetch();
-            }
-        }, 30000);
-
-        // Watchdog Final (55s): Rendición
-        this.syncWatchdog = setTimeout(() => {
-            if (this.totalReceived === 0) {
-                this.log("Fallo definitivo: El reloj no ha respondido tras 3 fases de rescate.", "error");
-                this._finalizeSync();
-            }
-            clearTimeout(phase2Timeout);
-            clearTimeout(phase3Timeout);
-        }, 55000);
+        if (this.syncTimeout) clearTimeout(this.syncTimeout);
 
         if (!this.fetchControlChar) {
             throw new Error("Característica de control no encontrada. El sync no es posible.");
@@ -297,59 +277,56 @@ class AmazfitDevice {
             // SEGURIDAD MÁXIMA: Liberamos el canal de autenticación.
             if (this.authChar) {
                 try {
-                    this.log("Limpiando canal Auth...", "ble");
+                    this.log("Liberando canal Auth...", "ble");
                     await this.authChar.stopNotifications();
                 } catch (e) { }
             }
 
             // Congelación Profunda (4.5s) para que el reloj respire tras Auth
-            this.log("Congelación Profunda (4.5s) para estabilización...", "system");
+            this.log("Estabilización de Hardware (4.5s)...", "system");
             await new Promise(r => setTimeout(r, 4500));
 
-            this.log("Habilitando notificaciones en canal Data/Control...", "ble");
+            // ASENTAMIENTO SECUENCIAL v1.3.7: No habilitamos todo a la vez
+            this.log("Habilitando Canal DATA (04)...", "ble");
             await this.fetchDataChar.startNotifications();
+            await new Promise(r => setTimeout(r, 2000));
+
             if (this.fetchControlChar && this.fetchControlChar.uuid !== this.fetchDataChar.uuid) {
+                this.log("Habilitando Canal CTRL (05)...", "ble");
                 try { await this.fetchControlChar.startNotifications(); } catch (e) { }
+                await new Promise(r => setTimeout(r, 4000));
             }
 
-            // Pausa de asentamiento v1.3.5 (3.5s): El Bip U Pro necesita tiempo extra
-            this.log("Pausa de asentamiento prolongada (3.5s)...", "ble");
-            await new Promise(r => setTimeout(r, 3500));
+            // SECUENCIA ATÓMICA v1.3.7: Sin temporizadores paralelos
 
-            // SECUENCIA ATÓMICA v1.3.1: Una fase tras otra, sin solapamientos
-
-            // Fase 1: Descarga Directa (SOLO canal de CONTROL 05)
-            this.log("Fase 1: Descarga Directa (Control Estricto)...", "ble");
+            // Fase 1: Descarga Directa
+            this.log("Fase 1: Descarga Directa (Sequential)...", "ble");
             const directFetch = new Uint8Array([0x01, 0x01, 0xE2, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
-            let success = await this._safeWrite(directFetch, "DIRECT_FETCH", 10, this.fetchControlChar);
+            let success = await this._safeWrite(directFetch, "DIRECT_FETCH", 20, this.fetchControlChar);
 
-            // Si falla la directa, esperamos y probamos la secundaria (SOLO canal de CONTROL 05)
+            // Fase 2: Handshake Secundario
             if (!success && this.totalReceived === 0) {
-                this.log("Fase 1 fallida. Esperando 5s para Handshake Secundario...", "system");
-                await new Promise(r => setTimeout(r, 5000));
+                this.log("Fase 1 incompleta. Iniciando Fase 2: Secundario...", "system");
                 const secondaryCmd = new Uint8Array([0x01, 0x01, 0xE8, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]);
-                success = await this._safeWrite(secondaryCmd, "SECONDARY", 10, this.fetchControlChar);
+                success = await this._safeWrite(secondaryCmd, "SECONDARY", 15, this.fetchControlChar);
             }
 
-            // Si todo lo anterior falla, vamos con la emergencia (SOLO canal de CONTROL 05)
+            // Fase 3: Emergencia
             if (!success && this.totalReceived === 0) {
-                this.log("Intentando Autorización de Emergencia v2 (Control Estricto)...", "error");
-                await this._forceAuthorizeFetch(); // Este usa _safeWrite internamente, lo ajustamos allí
+                this.log("Fase 2 incompleta. Iniciando Fase 3: Emergencia...", "error");
+                await this._forceAuthorizeFetch();
             }
 
             if (this.totalReceived === 0) {
-                this.log("Solicitudes enviadas. Esperando respuesta del reloj...", "system");
-
-                // Watchdog Final (45s): Rendición
+                this.log("Protocolo de calma completado. Esperando flujo...", "system");
                 this.syncWatchdog = setTimeout(() => {
                     if (this.totalReceived === 0) {
-                        this.log("Fallo definitivo: El reloj no ha respondido tras todas las fases.", "error");
+                        this.log("Sync fallido: El hardware no ha reaccionado.", "error");
                         this._finalizeSync();
                     }
-                }, 45000);
+                }, 30000);
             }
-
-            this.log("Secuencia Zero Gravity completada. Monitorizando flujo...", "system");
+        } catch (err) {
         } catch (err) {
             this.log(`ERROR crítico de sincronización: ${err.message}`, "error");
             this.log("TIP: Reinicia el Bluetooth y cierra Zepp/Notify de fondo.", "system");
@@ -370,7 +347,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.6";
+            const APP_VERSION = "1.3.7";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -516,7 +493,7 @@ class AmazfitDevice {
         await this._safeWrite(ackCmd, "ACK_NEBULA", 10, this.fetchControlChar);
     }
 
-    async _safeWrite(data, label, retries = 15, forceChar = null) {
+    async _safeWrite(data, label, retries = 20, forceChar = null) {
         // v1.3.2 - Mutex Estricto: Esperar lo que haga falta
         while (this.isWriting) {
             await new Promise(r => setTimeout(r, 100));
@@ -524,14 +501,14 @@ class AmazfitDevice {
 
         this.isWriting = true;
         try {
-            // v1.3.6: Monocanal Absoluto (05). Eliminamos fallback a canal 04 para envíos.
+            // v1.3.7: Monocanal Absoluto con recuperación térmica
             const char = forceChar || this.fetchControlChar;
             const charLabel = (char === this.fetchControlChar) ? "CTRL (05)" : "DATA (04)";
 
             for (let attempt = 1; attempt <= retries; attempt++) {
                 try {
-                    // Pausa de estabilización 1.3.6: Dar tiempo al hardware (medio segundo)
-                    await new Promise(r => setTimeout(r, 500));
+                    // Pausa de estabilización v1.3.7: 750ms para desaturar el chip
+                    await new Promise(r => setTimeout(r, 750));
 
                     this.log(`Sync [${label}] -> ${charLabel} (${attempt}/${retries})...`, "ble");
                     await char.writeValue(data);
@@ -539,12 +516,13 @@ class AmazfitDevice {
                 } catch (e) {
                     if (attempt < retries) {
                         try {
-                            // Fallback a sin-respuesta si el WRITE falla (GATT Busy)
+                            // Intento desesperado sin respuesta
                             await char.writeValueWithoutResponse(data);
                             return true;
                         } catch (e2) {
-                            this.log(`GATT Busy en ${charLabel}. Reintento en 1000ms...`, "ble");
-                            await new Promise(r => setTimeout(r, 1000));
+                            // v1.3.7: Aumentamos a 2.5s para que el SO limpie el bus
+                            this.log(`GATT Busy en ${charLabel}. Calma Térmica (2.5s)...`, "ble");
+                            await new Promise(r => setTimeout(r, 2500));
                         }
                     }
                 }
