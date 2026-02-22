@@ -282,25 +282,34 @@ class AmazfitDevice {
                 } catch (e) { }
             }
 
-            // Congelación Profunda (4.5s) para que el reloj respire tras Auth
-            this.log("Estabilización de Hardware (4.5s)...", "system");
-            await new Promise(r => setTimeout(r, 4500));
+            // ESCAPE TÉRMICO v1.3.8 (10s): Silencio absoluto para vaciar buffers
+            this.log("Escape Térmico (10s): Vaciando buffers de hardware...", "system");
+            await new Promise(r => setTimeout(r, 10000));
 
-            // ASENTAMIENTO SECUENCIAL v1.3.7: No habilitamos todo a la vez
-            this.log("Habilitando Canal DATA (04)...", "ble");
+            // HARD RESET DE CANALES v1.3.8
+            this.log("Hard Reset: Reiniciando canales de comunicación...", "ble");
+            try {
+                await this.fetchDataChar.stopNotifications();
+                if (this.fetchControlChar && this.fetchControlChar.uuid !== this.fetchDataChar.uuid) {
+                    await this.fetchControlChar.stopNotifications();
+                }
+            } catch (e) { }
+            await new Promise(r => setTimeout(r, 2000));
+
+            this.log("Habilitando Canal DATA (04) [VOID]...", "ble");
             await this.fetchDataChar.startNotifications();
             await new Promise(r => setTimeout(r, 2000));
 
             if (this.fetchControlChar && this.fetchControlChar.uuid !== this.fetchDataChar.uuid) {
-                this.log("Habilitando Canal CTRL (05)...", "ble");
+                this.log("Habilitando Canal CTRL (05) [VOID]...", "ble");
                 try { await this.fetchControlChar.startNotifications(); } catch (e) { }
-                await new Promise(r => setTimeout(r, 4000));
+                await new Promise(r => setTimeout(r, 2000));
             }
 
-            // SECUENCIA ATÓMICA v1.3.7: Sin temporizadores paralelos
+            // SECUENCIA ATÓMICA v1.3.8: Fases secuenciales forzadas
 
-            // Fase 1: Descarga Directa
-            this.log("Fase 1: Descarga Directa (Sequential)...", "ble");
+            // Fase 1: Descarga Directa (Fire & Forget)
+            this.log("Fase 1: Descarga Directa [VOID]...", "ble");
             const directFetch = new Uint8Array([0x01, 0x01, 0xE2, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
             let success = await this._safeWrite(directFetch, "DIRECT_FETCH", 20, this.fetchControlChar);
 
@@ -346,7 +355,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.7";
+            const APP_VERSION = "1.3.8";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -510,13 +519,16 @@ class AmazfitDevice {
                     await new Promise(r => setTimeout(r, 750));
 
                     this.log(`Sync [${label}] -> ${charLabel} (${attempt}/${retries})...`, "ble");
-                    await char.writeValue(data);
+
+                    // v1.3.8: "Fire & Forget" - Usamos writeWithoutResponse como primera opción
+                    // Esto evita el bloqueo del driver de Bluetooth en Windows (GATT Busy)
+                    await char.writeValueWithoutResponse(data);
                     return true;
                 } catch (e) {
                     if (attempt < retries) {
                         try {
-                            // Intento desesperado sin respuesta
-                            await char.writeValueWithoutResponse(data);
+                            // Intento desesperado con respuesta si lo anterior falló
+                            await char.writeValue(data);
                             return true;
                         } catch (e2) {
                             // v1.3.7: Aumentamos a 2.5s para que el SO limpie el bus
