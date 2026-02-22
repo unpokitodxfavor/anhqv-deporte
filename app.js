@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.2.3";
+    const APP_VERSION = "1.2.4";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -132,15 +132,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     refreshBtn.addEventListener('click', async () => {
-        showLoading('Sincronizando (Patch v1.2.3)...');
+        showLoading('Sincronizando (Patch v1.2.4)...');
 
-        // Safety hatch: Force hide loading after 15 seconds if sync hangs
+        // Chronos Timeout: 60 seconds (ample time for triple-handshake)
         const safetyHatch = setTimeout(() => {
             if (loadingOverlay.style.display !== 'none') {
-                log("TIMEOUT GLOBAL: La sincronización ha tardado demasiado. Desbloqueando UI.", "error");
+                log("TIMEOUT CHRONOS: La sincronización ha tardado más de 1 minuto. Desbloqueando UI.", "error");
                 hideLoading();
             }
-        }, 15000);
+        }, 60000);
 
         try {
             await window.amazfit.fetchActivities();
