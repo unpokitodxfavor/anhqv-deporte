@@ -327,7 +327,6 @@ class AmazfitDevice {
                 }, 30000);
             }
         } catch (err) {
-        } catch (err) {
             this.log(`ERROR crítico de sincronización: ${err.message}`, "error");
             this.log("TIP: Reinicia el Bluetooth y cierra Zepp/Notify de fondo.", "system");
             throw err;
