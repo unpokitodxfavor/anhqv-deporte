@@ -312,20 +312,44 @@ class AmazfitDevice {
                 try { await this.fetchControlChar.startNotifications(); } catch (e) { }
             }
 
-            const forceWrite = async (data, label) => {
-                return await this._safeWrite(data, label);
-            };
+            // Pausa Proactiva 1.3.1: Dar tiempo a que los servicios BLE se asienten
+            this.log("Pausa de asentamiento (2s)...", "ble");
+            await new Promise(r => setTimeout(r, 2000));
 
-            // Eliminamos Fase 1 (RESET) y Fase 2 (WARMUP) porque el Bip U Pro las rechaza
-            this.log("Fase 1: Descarga Directa (2018 Timestamp)...", "ble");
+            // SECUENCIA ATÓMICA v1.3.1: Una fase tras otra, sin solapamientos
+
+            // Fase 1: Descarga Directa
+            this.log("Fase 1: Descarga Directa (Atomic 1.3.1)...", "ble");
             const directFetch = new Uint8Array([0x01, 0x01, 0xE2, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
-            let success = await forceWrite(directFetch, "DIRECT_FETCH");
+            let success = await this._safeWrite(directFetch, "DIRECT_FETCH");
 
+            // Si falla la directa, esperamos y probamos la secundaria
             if (!success && this.totalReceived === 0) {
-                this.log("Solicitud enviada. Entrando en modo espera (Triple-Handshake)...", "system");
+                this.log("Fase 1 fallida. Esperando 5s para Handshake Secundario...", "system");
+                await new Promise(r => setTimeout(r, 5000));
+                const secondaryCmd = new Uint8Array([0x01, 0x01, 0xE8, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]);
+                success = await this._safeWrite(secondaryCmd, "SECONDARY");
             }
 
-            this.log("Deep Freeze completado. Esperando flujo de datos...", "system");
+            // Si todo lo anterior falla, vamos con la emergencia
+            if (!success && this.totalReceived === 0) {
+                this.log("Intentando Autorización de Emergencia v2...", "error");
+                await this._forceAuthorizeFetch();
+            }
+
+            if (this.totalReceived === 0) {
+                this.log("Solicitudes enviadas. Esperando respuesta del reloj...", "system");
+
+                // Watchdog Final (45s): Rendición
+                this.syncWatchdog = setTimeout(() => {
+                    if (this.totalReceived === 0) {
+                        this.log("Fallo definitivo: El reloj no ha respondido tras todas las fases.", "error");
+                        this._finalizeSync();
+                    }
+                }, 45000);
+            }
+
+            this.log("Secuencia Zero Gravity completada. Monitorizando flujo...", "system");
         } catch (err) {
             this.log(`ERROR crítico de sincronización: ${err.message}`, "error");
             this.log("TIP: Reinicia el Bluetooth y cierra Zepp/Notify de fondo.", "system");
@@ -346,7 +370,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.2.8";
+            const APP_VERSION = "1.3.1";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -412,7 +436,8 @@ class AmazfitDevice {
         // ACK PROGRESIVO: Si no enviamos nada, el reloj se pausa cada 2-4KB.
         // Enviamos un confirmador ligero cada 2KB para mantener el flujo abierto.
         if (Math.floor(this.totalReceived / 2048) > Math.floor(oldTotal / 2048)) {
-            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02])), 250);
+            // v1.3.1: Usamos sin respuesta para no congestionar el flujo de datos
+            this._sendSyncAck(new Uint8Array([0x02]), true);
         }
 
         // Throttling y Detección de Inactividad
@@ -470,32 +495,37 @@ class AmazfitDevice {
         await this._safeWrite(extendedCmd, "FULL_SYNC", 5);
     }
 
-    async _sendSyncAck(ackCmd) {
+    async _sendSyncAck(ackCmd, withoutResponse = false) {
         if (!(ackCmd instanceof Uint8Array)) {
             ackCmd = new Uint8Array([ackCmd]);
         }
-        // v1.3.0: Pausa aumentada para estabilidad atómica
+        // v1.3.1: Si es un ACK de confirmación de flujo, usamos modo rápido sin respuesta
+        if (withoutResponse) {
+            try {
+                const char = this.fetchControlChar || this.fetchDataChar;
+                if (char) await char.writeValueWithoutResponse(ackCmd);
+                return;
+            } catch (e) { }
+        }
         await this._safeWrite(ackCmd, "ACK", 2);
     }
 
     async _safeWrite(data, label, retries = 10) {
-        // v1.3.0 - Semáforo Atómico: Esperar si hay otra escritura en curso
-        let spinCount = 0;
-        while (this.isWriting && spinCount < 20) {
-            await new Promise(r => setTimeout(r, 50));
-            spinCount++;
+        // v1.3.1 - Mutex Estricto: Esperar lo que haga falta
+        while (this.isWriting) {
+            await new Promise(r => setTimeout(r, 100));
         }
 
         this.isWriting = true;
         try {
-            // v1.2.9: Solo escribimos en el canal de CONTROL (05) para evitar colisiones con el canal de DATOS (04)
-            const chars = [this.fetchControlChar].filter(c => c);
+            // v1.3.1: Restauramos fallback al canal de datos (04) si el de control (05) falla
+            const chars = [this.fetchControlChar, this.fetchDataChar].filter((c, i, a) => c && a.indexOf(c) === i);
 
             for (let attempt = 1; attempt <= retries; attempt++) {
                 for (const char of chars) {
                     try {
-                        // Pausa de estabilización 1.3.0: Dar tiempo al buffer del reloj
-                        await new Promise(r => setTimeout(r, 400));
+                        // Pausa de estabilización 1.3.1: Dar tiempo al hardware
+                        await new Promise(r => setTimeout(r, 450));
 
                         this.log(`Sync [${label}] -> ${char.uuid.slice(-2)} (${attempt}/${retries})...`, "ble");
                         await char.writeValue(data);
