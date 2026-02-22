@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.2.5";
+    const APP_VERSION = "1.2.7";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -61,6 +61,22 @@ document.addEventListener('DOMContentLoaded', () => {
     clearLogsBtn.addEventListener('click', () => {
         logConsole.innerHTML = `<div class="log-entry system">Consola limpia (v${APP_VERSION}).</div>`;
     });
+
+    const copyLogBtn = document.getElementById('copy-log');
+    if (copyLogBtn) {
+        copyLogBtn.addEventListener('click', () => {
+            const text = Array.from(logConsole.querySelectorAll('.log-entry'))
+                .map(el => el.innerText)
+                .join('\n');
+            navigator.clipboard.writeText(text).then(() => {
+                const oldText = copyLogBtn.innerText;
+                copyLogBtn.innerText = '¡Copiado!';
+                setTimeout(() => copyLogBtn.innerText = oldText, 2000);
+            }).catch(err => {
+                console.error("Error al copiar:", err);
+            });
+        });
+    }
 
     // Cargar clave guardada o usar la proporcionada
     const DEFAULT_KEY = "218236eafd6e9b5e05d02e4d112c6b57";
@@ -132,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     refreshBtn.addEventListener('click', async () => {
-        showLoading('Iniciando Parche de Resistencia (v1.2.5)...');
+        showLoading('Protocolo Copy & Flush v1.2.7...');
 
         // Chronos Timeout: 60 seconds (ample time for triple-handshake)
         const safetyHatch = setTimeout(() => {

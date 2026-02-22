@@ -371,7 +371,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.2.5";
+            const APP_VERSION = "1.2.7";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -480,26 +480,12 @@ class AmazfitDevice {
     }
 
     async _retryWithExtendedCommand() {
-        this.log("Esperando pausa de seguridad antes del reintento (1.5s)...", "system");
+        this.log("Pausa de seguridad Ghost+ (1.5s)...", "system");
         await new Promise(r => setTimeout(r, 1500));
 
-        this.log("Iniciando modo de compatibilidad (Full Sync)...", "system");
-        try {
-            // Comando extendido con timestamp NULL (10 bytes en total)
-            const extendedCmd = new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-
-            // Usamos el canal que funcionó antes (lastWorkingChar)
-            const char = this.lastWorkingChar || this.fetchControlChar;
-
-            try {
-                await char.writeValue(extendedCmd);
-            } catch (e) {
-                await char.writeValueWithoutResponse(extendedCmd);
-            }
-            this.log("Comando extendido enviado con éxito.", "ble");
-        } catch (err) {
-            this.log(`Fallo crítico en reintento: ${err.message}`, "error");
-        }
+        this.log("Fase 2: Modo Compatibilidad (Full Sync 1.2.7)...", "system");
+        const extendedCmd = new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        await this._safeWrite(extendedCmd, "FULL_SYNC", 5);
     }
 
     async _sendSyncAck(ackCmd) {
@@ -514,14 +500,15 @@ class AmazfitDevice {
         const chars = [this.fetchControlChar, this.fetchDataChar].filter((c, i, a) => c && a.indexOf(c) === i);
 
         for (let attempt = 1; attempt <= retries; attempt++) {
-            // Wake-up Ping antes de cada intento crítico
-            if (attempt > 1 && this.authChar) {
-                try { await this.authChar.readValue(); } catch (e) { }
-            }
-
             for (const char of chars) {
                 try {
-                    this.log(`Enviando [${label}] a ${char.uuid.slice(-4)} (Intento ${attempt}/${retries})...`, "ble");
+                    // Protocolo Ghost: Pre-read flush para limpiar el canal
+                    try { await char.readValue(); } catch (e) { }
+
+                    // Pausa extra para estabilizar tensión en el stack BLE del reloj
+                    await new Promise(r => setTimeout(r, 200));
+
+                    this.log(`Ghost [${label}] -> ${char.uuid.slice(-4)} (${attempt}/${retries})...`, "ble");
                     await char.writeValue(data);
                     return true;
                 } catch (e) {
@@ -530,9 +517,8 @@ class AmazfitDevice {
                             await char.writeValueWithoutResponse(data);
                             return true;
                         } catch (e2) {
-                            this.log(`Reintento ${attempt} falló: ${e2.message}`, "ble");
-                            // Backoff exponencial: 500ms, 1000ms, 1500ms...
-                            await new Promise(r => setTimeout(r, 500 * attempt));
+                            this.log(`GATT Busy. Esperando ${800 * attempt}ms...`, "ble");
+                            await new Promise(r => setTimeout(r, 800 * attempt));
                         }
                     }
                 }
