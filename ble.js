@@ -368,19 +368,19 @@ class AmazfitDevice {
 
             if (cmdReply === 0x03 && status === 0x01) {
                 this.log("Puerta 0x03 abierta. Disparando 0x05...", "ble");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x05])), 50);
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x05])), 150);
                 return;
             }
 
             if (cmdReply === 0x05 && status === 0x02) {
                 this.log("Rechazo 0x05. Probando 0x04...", "error");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x04])), 50);
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x04])), 150);
                 return;
             }
 
             if (cmdReply === 0x04 && status === 0x02) {
                 this.log("Rechazo 0x04. Probando 0x01...", "error");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x01])), 50);
+                setTimeout(() => this._sendSyncAck(new Uint8Array([0x01])), 150);
                 return;
             }
 
@@ -392,7 +392,7 @@ class AmazfitDevice {
         if (isHeader && data[1] === 0x01) {
             const lastByte = data[14];
             this.log(`Cabecera v2 detectada (Index: ${lastByte}). Iniciando transferencia...`, "ble");
-            this._sendSyncAck(new Uint8Array([0x02, lastByte]));
+            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, lastByte])), 150);
             return; // No acumulamos la cabecera en el buffer de datos
         }
 
@@ -404,7 +404,7 @@ class AmazfitDevice {
         // ACK PROGRESIVO: Si no enviamos nada, el reloj se pausa cada 2-4KB.
         // Enviamos un confirmador ligero cada 2KB para mantener el flujo abierto.
         if (Math.floor(this.totalReceived / 2048) > Math.floor(oldTotal / 2048)) {
-            this._sendSyncAck(new Uint8Array([0x02]));
+            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02])), 150);
         }
 
         // Throttling y Detección de Inactividad
@@ -466,18 +466,19 @@ class AmazfitDevice {
         if (!(ackCmd instanceof Uint8Array)) {
             ackCmd = new Uint8Array([ackCmd]);
         }
-        // Usar _safeWrite para los ACKs críticos durante negociación
+        // v1.2.9: Pausa de cortesía para que el Bip U Pro procese el cambio de modo
         await this._safeWrite(ackCmd, "ACK", 2);
     }
 
-    async _safeWrite(data, label, retries = 5) {
-        const chars = [this.fetchControlChar, this.fetchDataChar].filter((c, i, a) => c && a.indexOf(c) === i);
+    async _safeWrite(data, label, retries = 10) {
+        // v1.2.9: Solo escribimos en el canal de CONTROL (05) para evitar colisiones con el canal de DATOS (04)
+        const chars = [this.fetchControlChar].filter(c => c);
 
         for (let attempt = 1; attempt <= retries; attempt++) {
             for (const char of chars) {
                 try {
                     // Deep Freeze 1.2.8: Eliminamos readValue() para no saturar al Bip U Pro
-                    this.log(`Sync [${label}] -> ${char.uuid.slice(-4)} (${attempt}/${retries})...`, "ble");
+                    this.log(`Sync [${label}] -> ${char.uuid.slice(-2)} (${attempt}/${retries})...`, "ble");
                     await char.writeValue(data);
                     return true;
                 } catch (e) {
