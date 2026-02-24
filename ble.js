@@ -310,6 +310,7 @@ class AmazfitDevice {
         this.activityBuffer = new Uint8Array(0);
         this.activityChunks = [];
         this.totalReceived = 0;
+        this.inTransferMode = false; // v1.3.17: Reset de estado
         this.lastUiUpdate = 0;
 
         if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
@@ -407,7 +408,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.16";
+            const APP_VERSION = "1.3.17";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -423,12 +424,13 @@ class AmazfitDevice {
             }
 
             if (cmdReply === 0x01 && status === 0x02) {
-                // v1.3.16: Solo reintentamos si NO estamos ya recibiendo datos (evita bucle infinito)
-                if (this.totalReceived === 0) {
+                // v1.3.17: Solo reintentamos si NO estamos ya recibiendo datos.
+                // Usamos inTransferMode para una detección más fiable.
+                if (this.totalReceived === 0 && !this.inTransferMode) {
                     this.log("Rechazo 0x01. Iniciando modo de compatibilidad (Full Sync) tras 2s...", "error");
                     setTimeout(() => this._retryWithExtendedCommand(), 2000);
                 } else {
-                    this.log("Aviso: Rechazo 01 detectado pero el flujo ya está activo. Ignorando reintento...", "system");
+                    this.log("Aviso: Rechazo 01 ignorado (Bucle de flujo detectado).", "system");
                 }
                 return;
             }
@@ -454,9 +456,9 @@ class AmazfitDevice {
             // Detección de peticiones de ACK del reloj (10 02 XX)
             if (cmdReply === 0x02) {
                 this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo (Deep Space 500ms)...`, "ble");
-                // v1.3.16: Aumento a 500ms para evitar colisión en Canal 04 compartido
+                // v1.3.17: ACK CORRECTO [02, status] (Sin prefijo 01 para evitar colisión con FETCH)
                 setTimeout(() => {
-                    this._sendSyncAck(new Uint8Array([0x01, 0x02, status]), true);
+                    this._sendSyncAck(new Uint8Array([0x02, status]), true);
                 }, 500);
                 return;
             }
@@ -469,8 +471,10 @@ class AmazfitDevice {
         if (isHeader && data[1] === 0x01) {
             const lastByte = data[14];
             this.log(`Cabecera v2 detectada (Index: ${lastByte}). Iniciando transferencia (Deep Space 500ms)...`, "ble");
-            // v1.3.16: Delay de 500ms también para la cabecera
-            setTimeout(() => this._sendSyncAck(new Uint8Array([0x01, 0x02, lastByte]), true), 500);
+            // v1.3.17: Iniciamos flujo inmediatamente para evitar retries de control
+            this.inTransferMode = true;
+            // v1.3.17: ACK CORRECTO [02, lastByte]
+            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, lastByte]), true), 500);
             return; // No acumulamos la cabecera en el buffer de datos
         }
         // ACUMULACIÓN ULTRA-RÁPIDA (Solo datos reales)
