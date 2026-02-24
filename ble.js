@@ -311,7 +311,8 @@ class AmazfitDevice {
         this.activityChunks = [];
         this.totalReceived = 0;
         this.inTransferMode = false;
-        this.lastAckBlock = -1; // v1.3.18: Debouncing de ACKs
+        this.lastAckBlock = -1;
+        this.lastAckTime = 0; // v1.3.19: Debounce temporal suave
         this.lastUiUpdate = 0;
 
         if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
@@ -413,7 +414,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.18";
+            const APP_VERSION = "1.3.19";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -460,15 +461,18 @@ class AmazfitDevice {
 
             // Detección de peticiones de ACK del reloj (10 02 XX)
             if (cmdReply === 0x02) {
-                // v1.3.18: Debouncing para no saturar al reloj si pide el mismo bloque repetidamente
-                if (this.lastAckBlock === status) return;
-                this.lastAckBlock = status;
+                const now = Date.now();
+                // v1.3.19: Debouncing suave (200ms) en lugar de bloqueo total por bloque
+                if (this.lastAckBlock === status && (now - this.lastAckTime < 200)) return;
 
-                this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo (Hyper-Space 500ms)...`, "ble");
-                // v1.3.18: Formato Huami Standard [02, status, 0x01]
+                this.lastAckBlock = status;
+                this.lastAckTime = now;
+
+                this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo (Hyper-Burst 300ms)...`, "ble");
+                // v1.3.19: ACK Huami Standard [02, status, 01]
                 setTimeout(() => {
                     this._sendSyncAck(new Uint8Array([0x02, status, 0x01]), true);
-                }, 500);
+                }, 300);
                 return;
             }
 
@@ -479,13 +483,19 @@ class AmazfitDevice {
         // Cabecera v2 detectada
         if (isHeader && data[1] === 0x01) {
             const lastByte = data[14];
-            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Iniciando transferencia (Hyper-Space 500ms)...`, "ble");
-            // v1.3.18: Iniciamos flujo inmediatamente para evitar retries de control
+            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Disparando Hyper-Burst (100ms + 300ms)...`, "ble");
+
             this.inTransferMode = true;
             this.lastAckBlock = lastByte;
-            // v1.3.18: ACK Hyper-Space Standard [02, lastByte, 0x01]
-            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, lastByte, 0x01]), true), 500);
-            return; // No acumulamos la cabecera en el buffer de datos
+            this.lastAckTime = Date.now();
+
+            // v1.3.19: Ráfaga Hyper-Burst:
+            // 1. Eco de Handshake (Confirma recepción de cabecera)
+            setTimeout(() => this._sendSyncAck(new Uint8Array([0x01, 0x01]), true), 100);
+            // 2. ACK de Bloque inicial (Petición de datos)
+            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, lastByte, 0x01]), true), 400);
+
+            return;
         }
         // ACUMULACIÓN ULTRA-RÁPIDA (Solo datos reales)
         this.activityChunks.push(data);
