@@ -113,10 +113,11 @@ class AmazfitDevice {
                                 this.fetchDataChar = c;
                                 this.log("Canal de DATA (04) verificado.", "ble");
 
-                                // v1.3.14: Prioridad Alta para el canal de datos como mando fallback
-                                if (!this.fetchControlChar && (p.write || p.writeWithoutResponse)) {
+                                // v1.3.15: Si el mando actual no es el oficial (05), el 04 SIEMPRE gana como fallback
+                                const isOfficialControl = this.fetchControlChar && this.fetchControlChar.uuid.includes('0005');
+                                if ((!this.fetchControlChar || !isOfficialControl) && (p.write || p.writeWithoutResponse)) {
                                     this.fetchControlChar = c;
-                                    this.log("¡Prioridad Alta: Canal de DATOS (04) asignado como Mando!", "system");
+                                    this.log("¡Prioridad Crítica: Canal de DATOS (04) forzado como Mando!", "system");
                                 }
                             }
 
@@ -132,11 +133,11 @@ class AmazfitDevice {
                                     this.fetchControlChar = c;
                                     this.log("Canal de Mando (05) verificado con permisos de escritura.", "ble");
                                 } else {
-                                    this.log("AVISO: Canal 05 detectado pero es SOLO NOTIFICACIÓN. Ignorando como mando...", "system");
+                                    this.log("AVISO: Canal 05 detectado pero es SOLO NOTIFICACIÓN. Ignorando como oficial...", "system");
                                 }
                             }
 
-                            // Fallback Secundario: 01 o 03 (si no hemos asignado 04 ya)
+                            // Fallback Secundario: 01 o 03 (Solo si no hemos asignado nada aún, ni siquiera 04)
                             if (!this.fetchControlChar && (p.write || p.writeWithoutResponse) && s.uuid === HUAMI_SERVICE_ID) {
                                 if (uuid.includes('00000001') || uuid.includes('00000003')) {
                                     this.fetchControlChar = c;
@@ -406,7 +407,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.14";
+            const APP_VERSION = "1.3.15";
             const cmdReply = data[1];
             const status = data[2];
 
