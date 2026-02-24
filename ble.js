@@ -108,16 +108,22 @@ class AmazfitDevice {
 
                             this.log(`Char: ${c.uuid.substring(0, 8)}... [${propList.join('|')}]`, "ble");
 
-                            // Detección de Auth (09)
-                            if (uuid === AUTH_CHAR_ID) {
-                                this.authChar = c;
-                                this.log("Canal de AUTH (09) localizado.", "ble");
-                            }
-
                             // Detección de Canal de DATA (04)
                             if (uuid === FETCH_DATA_ID) {
                                 this.fetchDataChar = c;
                                 this.log("Canal de DATA (04) verificado.", "ble");
+
+                                // v1.3.14: Prioridad Alta para el canal de datos como mando fallback
+                                if (!this.fetchControlChar && (p.write || p.writeWithoutResponse)) {
+                                    this.fetchControlChar = c;
+                                    this.log("¡Prioridad Alta: Canal de DATOS (04) asignado como Mando!", "system");
+                                }
+                            }
+
+                            // Detección de Auth (09)
+                            if (uuid === AUTH_CHAR_ID) {
+                                this.authChar = c;
+                                this.log("Canal de AUTH (09) localizado.", "ble");
                             }
 
                             // Detección Adaptativa de canal de mando (MANDATORIA v1.3.10/11)
@@ -130,11 +136,11 @@ class AmazfitDevice {
                                 }
                             }
 
-                            // Si aún no tenemos mando, buscamos en 01 o 03 (o 04 como fallback)
+                            // Fallback Secundario: 01 o 03 (si no hemos asignado 04 ya)
                             if (!this.fetchControlChar && (p.write || p.writeWithoutResponse) && s.uuid === HUAMI_SERVICE_ID) {
-                                if (uuid.includes('00000001') || uuid.includes('00000003') || uuid === FETCH_DATA_ID) {
+                                if (uuid.includes('00000001') || uuid.includes('00000003')) {
                                     this.fetchControlChar = c;
-                                    this.log(`¡Canal de mando adaptativo asignado a: ${c.uuid.substring(0, 8)}!`, "system");
+                                    this.log(`¡Canal de mando adaptativo secundario asignado a: ${c.uuid.substring(0, 8)}!`, "system");
                                 }
                             }
                         }
@@ -313,22 +319,30 @@ class AmazfitDevice {
         }
 
         try {
-            // SEGURIDAD MÁXIMA: Liberamos el canal de autenticación.
+            // SEGURIDAD MÁXIMA: Liberamos el canal de autenticación con retardo v1.3.14
             if (this.authChar) {
                 try {
-                    this.log("Liberando canal Auth...", "ble");
-                    await this.authChar.stopNotifications();
+                    this.log("Preparando liberación de canal Auth...", "ble");
+                    // No liberamos inmediatamente para mantener la estabilidad del enlace
                 } catch (e) { }
             }
 
-            // ESCAPE TÉRMICO v1.3.13 (10s): Estandarizado para estabilidad en Windows
-            this.log("Arranque en Frío (10s): Limpiando stack de Bluetooth de Windows...", "system");
-            await new Promise(r => setTimeout(r, 10000));
+            // ESCAPE TÉRMICO v1.3.14 (10s): Estandarizado. Liberamos Auth a mitad de camino.
+            this.log("Arranque en Frío (10s): Limpiando stack de Bluetooth...", "system");
+            await new Promise(r => setTimeout(r, 5000));
+            if (this.authChar) {
+                try {
+                    this.log("Liberando canal Auth tras 5s de estabilidad...", "ble");
+                    await this.authChar.stopNotifications();
+                } catch (e) { }
+            }
+            await new Promise(r => setTimeout(r, 5000));
 
             // HARD RESET DE CANALES v1.3.8/9
             this.log("Hard Reset: Reiniciando canales de comunicación...", "ble");
             await new Promise(r => setTimeout(r, 1000));
 
+            this.log(`Habilitando Canal DATA (${this.fetchDataChar.uuid.substring(6, 8)}) [STELLAR]...`, "ble");
             await this.fetchDataChar.startNotifications();
             await new Promise(r => setTimeout(r, 1000));
 
@@ -392,7 +406,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.13";
+            const APP_VERSION = "1.3.14";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -558,7 +572,8 @@ class AmazfitDevice {
                     // Pausa de estabilización v1.3.12: 200ms para agilidad
                     await new Promise(r => setTimeout(r, 200));
 
-                    this.log(`Sync [${label}] -> ${charLabel} (Intento ${attempt}/${retries})...`, "ble");
+                    const methodLabel = canWriteNoResp ? "WRITE_NO_RESP" : "WRITE_RESP";
+                    this.log(`Sync [${label}] -> ${charLabel} (${methodLabel}) (Intento ${attempt}/${retries})...`, "ble");
 
                     if (canWriteNoResp) {
                         // Prioridad v1.3.8/9: Fire & Forget para evitar bloqueo de driver

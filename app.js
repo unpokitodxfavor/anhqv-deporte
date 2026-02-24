@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.3.13";
+    const APP_VERSION = "1.3.14";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -153,7 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Chronos Timeout v1.3.13: 120 seconds (resilience margin)
         const safetyHatch = setTimeout(() => {
             if (loadingOverlay.style.display !== 'none') {
-                log("TIMEOUT CHRONOS: La sincronización ha tardado más de 2 min. Desbloqueando UI.", "error");
+                log("TIMEOUT CHRONOS: Tiempo máximo de sincronización (2 min) agotado.", "error");
                 hideLoading();
             }
         }, 120000);
