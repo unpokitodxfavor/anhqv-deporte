@@ -112,13 +112,6 @@ class AmazfitDevice {
                             if (uuid === FETCH_DATA_ID) {
                                 this.fetchDataChar = c;
                                 this.log("Canal de DATA (04) verificado.", "ble");
-
-                                // v1.3.15: Si el mando actual no es el oficial (05), el 04 SIEMPRE gana como fallback
-                                const isOfficialControl = this.fetchControlChar && this.fetchControlChar.uuid.includes('0005');
-                                if ((!this.fetchControlChar || !isOfficialControl) && (p.write || p.writeWithoutResponse)) {
-                                    this.fetchControlChar = c;
-                                    this.log("¡Prioridad Crítica: Canal de DATOS (04) forzado como Mando!", "system");
-                                }
                             }
 
                             // Detección de Auth (09)
@@ -127,21 +120,17 @@ class AmazfitDevice {
                                 this.log("Canal de AUTH (09) localizado.", "ble");
                             }
 
-                            // Detección Adaptativa de canal de mando (MANDATORIA v1.3.10/11)
-                            if (uuid === FETCH_CONTROL_ID) {
-                                if (p.write || p.writeWithoutResponse) {
-                                    this.fetchControlChar = c;
-                                    this.log("Canal de Mando (05) verificado con permisos de escritura.", "ble");
-                                } else {
-                                    this.log("AVISO: Canal 05 detectado pero es SOLO NOTIFICACIÓN. Ignorando como oficial...", "system");
-                                }
+                            // Detección Adaptativa de canal de mando (MANDATORIA v1.3.20)
+                            // v1.3.20: Canal 01 es el mando preferido para Stellar Bridge
+                            if (uuid.includes('00000001')) {
+                                this.fetchControlChar = c;
+                                this.log("Canal de Control (01) verificado para Stellar Bridge.", "ble");
                             }
 
-                            // Fallback Secundario: 01 o 03 (Solo si no hemos asignado nada aún, ni siquiera 04)
-                            if (!this.fetchControlChar && (p.write || p.writeWithoutResponse) && s.uuid === HUAMI_SERVICE_ID) {
-                                if (uuid.includes('00000001') || uuid.includes('00000003')) {
+                            if (uuid === FETCH_CONTROL_ID && !this.fetchControlChar) {
+                                if (p.write || p.writeWithoutResponse) {
                                     this.fetchControlChar = c;
-                                    this.log(`¡Canal de mando adaptativo secundario asignado a: ${c.uuid.substring(0, 8)}!`, "system");
+                                    this.log("Canal de Mando (05) verificado como secundario.", "ble");
                                 }
                             }
                         }
@@ -414,7 +403,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.19";
+            const APP_VERSION = "1.3.20";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -459,19 +448,17 @@ class AmazfitDevice {
                 return;
             }
 
-            // Detección de peticiones de ACK del reloj (10 02 XX)
             if (cmdReply === 0x02) {
                 const now = Date.now();
-                // v1.3.19: Debouncing suave (200ms) en lugar de bloqueo total por bloque
                 if (this.lastAckBlock === status && (now - this.lastAckTime < 200)) return;
 
                 this.lastAckBlock = status;
                 this.lastAckTime = now;
 
-                this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo (Hyper-Burst 300ms)...`, "ble");
-                // v1.3.19: ACK Huami Standard [02, status, 01]
+                this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo vía Control (300ms)...`, "ble");
+                // v1.3.20: ACK Bridge [02, status] (Enviado al canal de mando 01)
                 setTimeout(() => {
-                    this._sendSyncAck(new Uint8Array([0x02, status, 0x01]), true);
+                    this._sendSyncAck(new Uint8Array([0x02, status]), false);
                 }, 300);
                 return;
             }
@@ -480,20 +467,17 @@ class AmazfitDevice {
             return;
         }
 
-        // Cabecera v2 detectada
         if (isHeader && data[1] === 0x01) {
             const lastByte = data[14];
-            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Disparando Hyper-Burst (100ms + 300ms)...`, "ble");
+            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Handshake Bridge (300ms)...`, "ble");
 
             this.inTransferMode = true;
             this.lastAckBlock = lastByte;
             this.lastAckTime = Date.now();
 
-            // v1.3.19: Ráfaga Hyper-Burst:
-            // 1. Eco de Handshake (Confirma recepción de cabecera)
-            setTimeout(() => this._sendSyncAck(new Uint8Array([0x01, 0x01]), true), 100);
-            // 2. ACK de Bloque inicial (Petición de datos)
-            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, lastByte, 0x01]), true), 400);
+            // v1.3.20: Handshake Stellar Bridge: 
+            // Respondemos a la cabecera directamente con el ACK del primer bloque en el canal de control.
+            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, lastByte]), false), 300);
 
             return;
         }
