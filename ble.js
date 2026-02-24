@@ -407,7 +407,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.15";
+            const APP_VERSION = "1.3.16";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -423,9 +423,13 @@ class AmazfitDevice {
             }
 
             if (cmdReply === 0x01 && status === 0x02) {
-                this.log("Rechazo 0x01. Iniciando modo de compatibilidad (Full Sync) tras 2s...", "error");
-                // v1.3.6: Cool-down post-rechazo para no saturar al reloj
-                setTimeout(() => this._retryWithExtendedCommand(), 2000);
+                // v1.3.16: Solo reintentamos si NO estamos ya recibiendo datos (evita bucle infinito)
+                if (this.totalReceived === 0) {
+                    this.log("Rechazo 0x01. Iniciando modo de compatibilidad (Full Sync) tras 2s...", "error");
+                    setTimeout(() => this._retryWithExtendedCommand(), 2000);
+                } else {
+                    this.log("Aviso: Rechazo 01 detectado pero el flujo ya está activo. Ignorando reintento...", "system");
+                }
                 return;
             }
 
@@ -449,11 +453,11 @@ class AmazfitDevice {
 
             // Detección de peticiones de ACK del reloj (10 02 XX)
             if (cmdReply === 0x02) {
-                this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo (Nebula) en 200ms...`, "ble");
-                // v1.3.4: Prefijo 01 y pequeño delay para que el reloj respire
+                this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo (Deep Space 500ms)...`, "ble");
+                // v1.3.16: Aumento a 500ms para evitar colisión en Canal 04 compartido
                 setTimeout(() => {
                     this._sendSyncAck(new Uint8Array([0x01, 0x02, status]), true);
-                }, 200);
+                }, 500);
                 return;
             }
 
@@ -464,9 +468,9 @@ class AmazfitDevice {
         // Cabecera v2 detectada
         if (isHeader && data[1] === 0x01) {
             const lastByte = data[14];
-            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Iniciando transferencia (Nebula)...`, "ble");
-            // v1.3.4: Prefijo 01 y delay para la cabecera también
-            setTimeout(() => this._sendSyncAck(new Uint8Array([0x01, 0x02, lastByte]), true), 200);
+            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Iniciando transferencia (Deep Space 500ms)...`, "ble");
+            // v1.3.16: Delay de 500ms también para la cabecera
+            setTimeout(() => this._sendSyncAck(new Uint8Array([0x01, 0x02, lastByte]), true), 500);
             return; // No acumulamos la cabecera en el buffer de datos
         }
         // ACUMULACIÓN ULTRA-RÁPIDA (Solo datos reales)
@@ -543,13 +547,18 @@ class AmazfitDevice {
         await this._safeWrite(extendedCmd, "FULL_SYNC", 10, this.fetchControlChar);
     }
 
-    async _sendSyncAck(ackCmd, withoutResponse = true) {
-        if (!(ackCmd instanceof Uint8Array)) {
-            ackCmd = new Uint8Array([ackCmd]);
+    async _sendSyncAck(ackCmd, isNebula = false) {
+        // v1.3.16: Protocolo adaptativo. Si el ACK Nebula falla o es rechazado,
+        // intentamos un fallback al ACK clásico (02) que es universal.
+        this.log(`Enviando ACK [${Array.from(ackCmd).map(b => b.toString(16).padStart(2, '0')).join(' ')}]...`, "ble");
+
+        const success = await this._safeWrite(ackCmd, isNebula ? "ACK_NEBULA" : "ACK_SYNC", 10, this.fetchControlChar);
+
+        if (!success && isNebula) {
+            this.log("Fallo en ACK Nebula. Probando Fallback Clásico (02)...", "system");
+            const classicAck = new Uint8Array([0x02]);
+            await this._safeWrite(classicAck, "ACK_CLASSIC", 5, this.fetchControlChar);
         }
-        // v1.3.6: ACKs exclusivamente por el canal de mando (05)
-        // El canal 04 es SOLO para recibir datos.
-        await this._safeWrite(ackCmd, "ACK_NEBULA", 10, this.fetchControlChar);
     }
 
     async _safeWrite(data, label, retries = 20, forceChar = null) {
