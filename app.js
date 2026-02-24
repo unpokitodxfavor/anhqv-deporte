@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.3.11";
+    const APP_VERSION = "1.3.13";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -150,13 +150,13 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshBtn.addEventListener('click', async () => {
         showLoading('Flujo de Rayo Cósmico v1.3.11 (Resiliencia Total)...');
 
-        // Chronos Timeout v1.3.10: 90 seconds (to compensate for 20s escape)
+        // Chronos Timeout v1.3.13: 120 seconds (resilience margin)
         const safetyHatch = setTimeout(() => {
             if (loadingOverlay.style.display !== 'none') {
-                log("TIMEOUT CHRONOS: La sincronización ha tardado más de 1 minuto. Desbloqueando UI.", "error");
+                log("TIMEOUT CHRONOS: La sincronización ha tardado más de 2 min. Desbloqueando UI.", "error");
                 hideLoading();
             }
-        }, 60000);
+        }, 120000);
 
         try {
             await window.amazfit.fetchActivities();

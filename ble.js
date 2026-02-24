@@ -321,28 +321,21 @@ class AmazfitDevice {
                 } catch (e) { }
             }
 
-            // ESCAPE TÉRMICO v1.3.10 (20s): Silencio absoluto para liberar driver de Windows
-            this.log("Arranque en Frío (20s): Limpiando stack de Bluetooth de Windows...", "system");
-            await new Promise(r => setTimeout(r, 20000));
+            // ESCAPE TÉRMICO v1.3.13 (10s): Estandarizado para estabilidad en Windows
+            this.log("Arranque en Frío (10s): Limpiando stack de Bluetooth de Windows...", "system");
+            await new Promise(r => setTimeout(r, 10000));
 
             // HARD RESET DE CANALES v1.3.8/9
             this.log("Hard Reset: Reiniciando canales de comunicación...", "ble");
-            try {
-                await this.fetchDataChar.stopNotifications();
-                if (this.fetchControlChar && this.fetchControlChar.uuid !== this.fetchDataChar.uuid) {
-                    await this.fetchControlChar.stopNotifications();
-                }
-            } catch (e) { }
-            await new Promise(r => setTimeout(r, 3000));
+            await new Promise(r => setTimeout(r, 1000));
 
-            this.log("Habilitando Canal DATA (04) [STELLAR]...", "ble");
             await this.fetchDataChar.startNotifications();
-            await new Promise(r => setTimeout(r, 3000));
+            await new Promise(r => setTimeout(r, 1000));
 
             if (this.fetchControlChar && this.fetchControlChar.uuid !== this.fetchDataChar.uuid) {
                 this.log(`Habilitando Canal CTRL (${this.fetchControlChar.uuid.substring(6, 8)}) [STELLAR]...`, "ble");
                 try { await this.fetchControlChar.startNotifications(); } catch (e) { }
-                await new Promise(r => setTimeout(r, 5000));
+                await new Promise(r => setTimeout(r, 2000));
             }
 
             // SECUENCIA ATÓMICA v1.3.9: Fases secuenciales adaptativas
@@ -350,29 +343,34 @@ class AmazfitDevice {
             // Fase 1: Descarga Directa
             this.log("Fase 1: Descarga Directa (Detección Adaptativa)...", "ble");
             const directFetch = new Uint8Array([0x01, 0x01, 0xE2, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
-            let success = await this._safeWrite(directFetch, "DIRECT_FETCH", 20, this.fetchControlChar);
+            await this._safeWrite(directFetch, "DIRECT_FETCH", 20, this.fetchControlChar);
 
-            // Fase 2: Handshake Secundario
-            if (!success && this.totalReceived === 0) {
-                this.log("Fase 1 incompleta. Iniciando Fase 2: Secundario...", "system");
+            // Espera activa v1.3.13: 10s para ver si Fase 1 arranca el flujo
+            await new Promise(r => setTimeout(r, 10000));
+
+            // Fase 2: Handshake Secundario (Si no hay datos)
+            if (this.totalReceived === 0) {
+                this.log("Fase 1 sin respuesta de datos. Iniciando Fase 2: Secundario...", "system");
                 const secondaryCmd = new Uint8Array([0x01, 0x01, 0xE8, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]);
-                success = await this._safeWrite(secondaryCmd, "SECONDARY", 15, this.fetchControlChar);
+                await this._safeWrite(secondaryCmd, "SECONDARY", 15, this.fetchControlChar);
+                await new Promise(r => setTimeout(r, 10000));
             }
 
-            // Fase 3: Emergencia
-            if (!success && this.totalReceived === 0) {
-                this.log("Fase 2 incompleta. Iniciando Fase 3: Emergencia...", "error");
+            // Fase 3: Emergencia (Si sigue sin haber datos)
+            if (this.totalReceived === 0) {
+                this.log("Fase 2 sin respuesta. Iniciando Fase 3: Emergencia...", "error");
                 await this._forceAuthorizeFetch();
+                await new Promise(r => setTimeout(r, 10000));
             }
 
             if (this.totalReceived === 0) {
-                this.log("Protocolo de calma completado. Esperando flujo...", "system");
+                this.log("Protocolo de calma completado. Esperando flujo final...", "system");
                 this.syncWatchdog = setTimeout(() => {
                     if (this.totalReceived === 0) {
-                        this.log("Sync fallido: El hardware no ha reaccionado.", "error");
+                        this.log("Sync fallido: El hardware no ha reaccionado tras todas las fases.", "error");
                         this._finalizeSync();
                     }
-                }, 30000);
+                }, 10000);
             }
         } catch (err) {
             this.log(`ERROR crítico de sincronización: ${err.message}`, "error");
@@ -394,7 +392,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.11";
+            const APP_VERSION = "1.3.13";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -456,7 +454,6 @@ class AmazfitDevice {
             setTimeout(() => this._sendSyncAck(new Uint8Array([0x01, 0x02, lastByte]), true), 200);
             return; // No acumulamos la cabecera en el buffer de datos
         }
-
         // ACUMULACIÓN ULTRA-RÁPIDA (Solo datos reales)
         this.activityChunks.push(data);
         const oldTotal = this.totalReceived;
@@ -558,8 +555,8 @@ class AmazfitDevice {
 
             for (let attempt = 1; attempt <= retries; attempt++) {
                 try {
-                    // Pausa de estabilización v1.3.9: 1s para desaturar el chip
-                    await new Promise(r => setTimeout(r, 1000));
+                    // Pausa de estabilización v1.3.12: 200ms para agilidad
+                    await new Promise(r => setTimeout(r, 200));
 
                     this.log(`Sync [${label}] -> ${charLabel} (Intento ${attempt}/${retries})...`, "ble");
 
@@ -574,7 +571,7 @@ class AmazfitDevice {
                     return true;
                 } catch (e) {
                     if (attempt < retries) {
-                        // v1.3.9: Cooldown ampliado a 3s para liberar el driver de Windows
+                        // v1.3.13: Cooldown estricto de 3s para liberar el driver de Windows
                         this.log(`GATT Busy en ${charLabel}. Cooldown Estelar (3s)...`, "ble");
                         await new Promise(r => setTimeout(r, 3000));
 
@@ -628,9 +625,23 @@ class AmazfitDevice {
 
     _setupDataListener() {
         if (!this.fetchDataChar) return;
-        this.fetchDataChar.removeEventListener('characteristicvaluechanged', this._activityDataBound);
-        this._activityDataBound = (e) => this._handleActivityData(e);
-        this.fetchDataChar.addEventListener('characteristicvaluechanged', this._activityDataBound);
+
+        // v1.3.12: Detección de colisión de canales para escucha dual
+        const channels = new Set();
+        if (this.fetchDataChar) channels.add(this.fetchDataChar);
+        if (this.fetchControlChar) channels.add(this.fetchControlChar);
+
+        this._activityDataBound = this._activityDataBound || ((e) => this._handleActivityData(e));
+
+        channels.forEach(char => {
+            try {
+                char.removeEventListener('characteristicvaluechanged', this._activityDataBound);
+                char.addEventListener('characteristicvaluechanged', this._activityDataBound);
+                this.log(`Escucha activa en canal: ${char.uuid.substring(6, 8)}`, "ble");
+            } catch (err) {
+                this.log(`Error al configurar listener en ${char.uuid.substring(6, 8)}: ${err.message}`, "error");
+            }
+        });
     }
 
     // Helpers
