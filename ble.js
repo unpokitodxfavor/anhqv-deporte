@@ -53,13 +53,17 @@ class AmazfitDevice {
 
         this.log("Llamando a requestDevice... (El navegador debería mostrar el diálogo ahora)", "ble");
         try {
+            // v1.3.22: Modo Nuclear de Descubrimiento (Listar todos los dispositivos)
             this.device = await navigator.bluetooth.requestDevice({
-                filters: [
-                    { services: [HUAMI_SERVICE_ID] },
-                    { namePrefix: 'Amazfit' },
-                    { namePrefix: 'Bip' }
-                ],
-                optionalServices: [HUAMI_SERVICE_ID, TIME_SERVICE_ID, '0000fee1-0000-1000-8000-00805f9b34fb']
+                acceptAllDevices: true,
+                optionalServices: [
+                    HUAMI_SERVICE_ID,
+                    TIME_SERVICE_ID,
+                    '0000fee1-0000-1000-8000-00805f9b34fb',
+                    '0000fee2-0000-1000-8000-00805f9b34fb',
+                    '00001800-0000-1000-8000-00805f9b34fb', // Generic Access
+                    '00001801-0000-1000-8000-00805f9b34fb'  // Generic Attribute
+                ]
             });
         } catch (bleErr) {
             this.log(`Error al buscar dispositivo: ${bleErr.message}`, "error");
@@ -120,18 +124,19 @@ class AmazfitDevice {
                                 this.log("Canal de AUTH (09) localizado.", "ble");
                             }
 
-                            // Detección Adaptativa de canal de mando (MANDATORIA v1.3.20)
-                            // v1.3.20: Canal 01 es el mando preferido para Stellar Bridge
-                            if (uuid.includes('00000001')) {
-                                this.fetchControlChar = c;
-                                this.log("Canal de Control (01) verificado para Stellar Bridge.", "ble");
-                            }
-
-                            if (uuid === FETCH_CONTROL_ID && !this.fetchControlChar) {
+                            // Detección Adaptativa de canal de mando (MANDATORIA v1.3.21)
+                            // v1.3.21: Priorizamos Canal 05 como el mando más estable
+                            if (uuid === FETCH_CONTROL_ID) {
                                 if (p.write || p.writeWithoutResponse) {
                                     this.fetchControlChar = c;
-                                    this.log("Canal de Mando (05) verificado como secundario.", "ble");
+                                    this.log("Canal de Mando (05) verificado con permisos de escritura.", "ble");
                                 }
+                            }
+
+                            // Fallback Secundario: Canal 01 (Stellar Bridge compatible)
+                            if (!this.fetchControlChar && uuid.includes('00000001')) {
+                                this.fetchControlChar = c;
+                                this.log("Canal de Control (01) verificado como secundario.", "ble");
                             }
                         }
                     } catch (err) { }
@@ -205,11 +210,16 @@ class AmazfitDevice {
                 this.server = await this.device.gatt.connect();
 
                 // El resto es igual que connect() pero sin requestDevice
-                // Re-usamos una versión simplificada del descubrimiento
+                // Re-usamos una versión robusta del descubrimiento
                 this.service = await this.server.getPrimaryService(HUAMI_SERVICE_ID);
-                this.authChar = await this.service.getCharacteristic(AUTH_CHAR_ID);
-                this.fetchControlChar = await this.service.getCharacteristic(FETCH_CONTROL_ID);
-                this.fetchDataChar = await this.service.getCharacteristic(FETCH_DATA_ID);
+                const chars = await this.service.getCharacteristics();
+                for (const c of chars) {
+                    const uuid = c.uuid.toLowerCase();
+                    if (uuid === AUTH_CHAR_ID) this.authChar = c;
+                    if (uuid === FETCH_DATA_ID) this.fetchDataChar = c;
+                    if (uuid === FETCH_CONTROL_ID) this.fetchControlChar = c;
+                    if (uuid.includes('00000001') && !this.fetchControlChar) this.fetchControlChar = c;
+                }
 
                 if (!this.fetchControlChar) this.fetchControlChar = this.fetchDataChar;
                 if (!this.fetchDataChar) this.fetchDataChar = this.fetchControlChar;
@@ -403,7 +413,7 @@ class AmazfitDevice {
         }
 
         if (isControl) {
-            const APP_VERSION = "1.3.20";
+            const APP_VERSION = "1.3.22";
             const cmdReply = data[1];
             const status = data[2];
 
@@ -456,9 +466,9 @@ class AmazfitDevice {
                 this.lastAckTime = now;
 
                 this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo vía Control (300ms)...`, "ble");
-                // v1.3.20: ACK Bridge [02, status] (Enviado al canal de mando 01)
+                // v1.3.21: Restauramos ACK Huami Standard [02, status, 01] para máxima compatibilidad
                 setTimeout(() => {
-                    this._sendSyncAck(new Uint8Array([0x02, status]), false);
+                    this._sendSyncAck(new Uint8Array([0x02, status, 0x01]), false);
                 }, 300);
                 return;
             }
@@ -475,9 +485,11 @@ class AmazfitDevice {
             this.lastAckBlock = lastByte;
             this.lastAckTime = Date.now();
 
-            // v1.3.20: Handshake Stellar Bridge: 
-            // Respondemos a la cabecera directamente con el ACK del primer bloque en el canal de control.
-            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, lastByte]), false), 300);
+            // v1.3.21: Handshake Robusto: 
+            // 1. Eco de Handshake (Confirma recepción de cabecera)
+            setTimeout(() => this._sendSyncAck(new Uint8Array([0x01, 0x01]), false), 100);
+            // 2. ACK de Bloque inicial (Petición de datos) usando formato estándar
+            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, lastByte, 0x01]), false), 400);
 
             return;
         }

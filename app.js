@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
-    const APP_VERSION = "1.3.20";
+    const APP_VERSION = "1.3.22";
 
     // --- Logger ---
     function log(message, type = 'system') {
