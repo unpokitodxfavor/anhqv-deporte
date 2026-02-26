@@ -667,18 +667,51 @@ class AmazfitDevice {
         try {
             const now = new Date();
             const year = now.getFullYear();
-            const timePacket = new Uint8Array([
+
+            // Format 1: 11 bytes (Specific Huami/Zepp with Timezone & DST)
+            const packet11 = new Uint8Array([
                 year & 0xFF, (year >> 8) & 0xFF,
-                now.getMonth() + 1,
-                now.getDate(),
-                now.getHours(),
-                now.getMinutes(),
-                now.getSeconds(),
+                now.getMonth() + 1, now.getDate(),
+                now.getHours(), now.getMinutes(), now.getSeconds(),
                 (now.getDay() === 0 ? 7 : now.getDay()),
-                0, 1
+                0, // Fractions256
+                0, // Timezone offset (simplified)
+                0  // DST offset (simplified)
             ]);
-            await this.timeChar.writeValue(timePacket);
-            this.log("¡Hora sincronizada con éxito!", "system");
+
+            // Format 2: 10 bytes (Standard BLE Current Time Service Exact Time 256)
+            const packet10 = new Uint8Array([
+                year & 0xFF, (year >> 8) & 0xFF,
+                now.getMonth() + 1, now.getDate(),
+                now.getHours(), now.getMinutes(), now.getSeconds(),
+                (now.getDay() === 0 ? 7 : now.getDay()),
+                0, 1 // Fractions256, Adjust Reason
+            ]);
+
+            // Format 3: 7 bytes (Basic BLE Date Time)
+            const packet7 = new Uint8Array([
+                year & 0xFF, (year >> 8) & 0xFF,
+                now.getMonth() + 1, now.getDate(),
+                now.getHours(), now.getMinutes(), now.getSeconds()
+            ]);
+
+            let success = false;
+            for (const packet of [packet11, packet10, packet7]) {
+                try {
+                    await this.timeChar.writeValue(packet);
+                    this.log(`¡Hora sincronizada con éxito! (Longitud: ${packet.length} bytes)`, "system");
+                    success = true;
+                    break;
+                } catch (e) {
+                    if (!e.message.includes('attribute length') && !e.message.includes('length')) {
+                        throw e; // Lanza el error si no es por longitud
+                    }
+                }
+            }
+
+            if (!success) {
+                this.log("No se pudo escribir la hora en ningún formato soportado.", "error");
+            }
         } catch (err) {
             this.log(`Error de hora: ${err.message}`, "error");
         }
