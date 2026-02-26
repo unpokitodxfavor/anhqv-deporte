@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const VITE_SUSTAINABILITY = false;
     const OFFLINE = false;
-    const APP_VERSION = "v1.3.32";
+    const APP_VERSION = "v1.3.33";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -43,6 +43,11 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("Error in log function:", e);
         }
     }
+
+    // Permitir a otros ficheros mandar logs a la consola UI
+    window.addEventListener('app-log', (e) => {
+        log(e.detail.message, e.detail.type);
+    });
 
     // Capture global errors
     window.onerror = function (msg, url, lineNo, columnNo, error) {

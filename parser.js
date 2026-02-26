@@ -58,6 +58,14 @@ class ActivityParser {
         const view = new DataView(buffer);
         let offset = 0;
 
+        // Trace of first 160 bytes for debugging
+        let hexDump = "";
+        for (let j = 0; j < Math.min(160, buffer.byteLength); j++) {
+            hexDump += view.getUint8(j).toString(16).padStart(2, '0') + " ";
+        }
+        window.dispatchEvent(new CustomEvent('app-log', { detail: { message: "Raw Data (Hex): " + hexDump, type: 'system' } }));
+        console.log("Trace Hex Dump RTOS:", hexDump);
+
         let currentTimestamp = new Date(); // La hora la asume como ahora al mostrar
         let totalTimeSecs = 0;
         let lastTimeOffset = 0;
