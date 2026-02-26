@@ -52,19 +52,21 @@ class ActivityParser {
     }
 
     static parseZeppOsFormat(buffer) {
+        // En Bip U Pro (Huami RTOS), el buffer ya viene sin el sequence byte (MTU header) 
+        // gracias a la limpieza en ble.js.
+        // Son bloques continuos de 8 bytes (Type, TimeOffset, 6 bytes payload)
         const view = new DataView(buffer);
         let offset = 0;
 
-        let currentTimestamp = new Date();
-        let currentTimeOffset = 0;
+        let currentTimestamp = new Date(); // La hora la asume como ahora al mostrar
+        let totalTimeSecs = 0;
+        let lastTimeOffset = 0;
 
         let baseLng = 0;
         let baseLat = 0;
-        let baseAlt = 0;
 
         const points = [];
         let totalDistance = 0;
-        let totalTimeSecs = 0;
 
         let lastLat = null;
         let lastLng = null;
@@ -77,119 +79,94 @@ class ActivityParser {
         // Convertidor de Huami a Grados Decimales estandar
         const huamiToDegrees = (val) => val / 3000000.0;
 
-        // Iterar los chuncks tipo-longitud-valor
-        while (offset < view.byteLength) {
+        while (offset + 8 <= view.byteLength) {
             const typeCode = view.getUint8(offset);
-            const length = view.getUint8(offset + 1);
-            const initialOffset = offset;
-            offset += 2; // Avanzar el header de tipo+longitud
+            const timeOffset = view.getUint8(offset + 1);
 
-            // Asegurarse de que no nos salimos del buffer
-            if (initialOffset + length > view.byteLength) {
-                console.warn(`Paquete corrupto al final del buffer. Type: ${typeCode}, Length: ${length}`);
-                break;
+            // Calculo de tiempo absoluto acumulativo (con wrap a los 256 segs)
+            let delta = timeOffset - lastTimeOffset;
+            if (delta < 0) {
+                delta += 256;
             }
+            lastTimeOffset = timeOffset;
+            totalTimeSecs += delta;
+
+            const pointTime = new Date(currentTimestamp.getTime() + (totalTimeSecs * 1000));
+            if (!firstPointTime) firstPointTime = pointTime;
+            lastPointTime = pointTime;
 
             switch (typeCode) {
-                case 1: // TIMESTAMP (length 12)
-                    if (length === 12) {
-                        // view.getInt32(offset, true); // Ignorado
-                        // Javascript no soporta getInt64 nativo en DataView sin BigInt
-                        const timeMsLow = view.getUint32(offset + 4, true);
-                        const timeMsHigh = view.getUint32(offset + 8, true);
-                        // Convertir a numero (seguro hasta el año 285,616)
-                        currentTimestamp = new Date((timeMsHigh * Math.pow(2, 32)) + timeMsLow);
-                        currentTimeOffset = 0;
+                case 0: // GPS (lngDelta, latDelta, altDelta) - Int16LE
+                    const lngDelta = view.getInt16(offset + 2, true);
+                    const latDelta = view.getInt16(offset + 4, true);
+
+                    baseLng += lngDelta;
+                    baseLat += latDelta;
+
+                    const curLng = huamiToDegrees(baseLng);
+                    const curLat = huamiToDegrees(baseLat);
+
+                    if (lastLat !== null && lastLng !== null) {
+                        totalDistance += this._calcDistance(lastLat, lastLng, curLat, curLng);
                     }
+                    lastLat = curLat;
+                    lastLng = curLng;
+
+                    points.push({
+                        lat: curLat,
+                        lng: curLng,
+                        time: pointTime,
+                        hr: 0
+                    });
                     break;
-                case 2: // GPS_COORDS (length 20)
-                    if (length === 20) {
-                        baseLng = view.getInt32(offset + 6, true);
-                        baseLat = view.getInt32(offset + 10, true);
 
-                        const curLng = huamiToDegrees(baseLng);
-                        const curLat = huamiToDegrees(baseLat);
+                case 1: // HR
+                    const v1 = view.getUint8(offset + 2);
+                    const v2 = view.getUint8(offset + 3);
+                    const v3 = view.getUint8(offset + 4);
+                    const v4 = view.getUint8(offset + 5);
+                    const v5 = view.getUint8(offset + 6);
+                    const v6 = view.getUint8(offset + 7);
 
-                        if (lastLat !== null && lastLng !== null) {
-                            totalDistance += this._calcDistance(lastLat, lastLng, curLat, curLng);
-                        }
-                        lastLat = curLat;
-                        lastLng = curLng;
-
-                        const pointTime = new Date(currentTimestamp.getTime() + currentTimeOffset);
-                        if (!firstPointTime) firstPointTime = pointTime;
-                        lastPointTime = pointTime;
-
-                        points.push({
-                            lat: curLat,
-                            lng: curLng,
-                            time: pointTime,
-                            hr: 0 // Se rellena si hay HR cercano temporalmente
-                        });
-                    }
-                    break;
-                case 3: // GPS_DELTA (length 8)
-                    if (length === 8) {
-                        currentTimeOffset = view.getInt16(offset, true);
-                        const lngDelta = view.getInt16(offset + 2, true);
-                        const latDelta = view.getInt16(offset + 4, true);
-
-                        baseLng += lngDelta;
-                        baseLat += latDelta;
-
-                        const curLng = huamiToDegrees(baseLng);
-                        const curLat = huamiToDegrees(baseLat);
-
-                        if (lastLat !== null && lastLng !== null) {
-                            totalDistance += this._calcDistance(lastLat, lastLng, curLat, curLng);
-                        }
-                        lastLat = curLat;
-                        lastLng = curLng;
-
-                        const pointTime = new Date(currentTimestamp.getTime() + currentTimeOffset);
-                        if (!firstPointTime) firstPointTime = pointTime;
-                        lastPointTime = pointTime;
-
-                        points.push({
-                            lat: curLat,
-                            lng: curLng,
-                            time: pointTime,
-                            hr: 0
-                        });
-                    }
-                    break;
-                case 4: // STATUS (length 4)
-                    break;
-                case 5: // SPEED (length 8)
-                    break;
-                case 7: // ALTITUDE (length 6)
-                    break;
-                case 8: // HEARTRATE (length 3)
-                    if (length === 3) {
-                        currentTimeOffset = view.getInt16(offset, true);
-                        const hr = view.getUint8(offset + 2);
-
-                        if (hr > 0 && hr < 255) {
-                            hrSum += hr;
+                    if (v2 === 0 && v3 === 0 && v4 === 0 && v5 === 0 && v6 === 0) {
+                        // Formato V2: Solo v1 es HR
+                        if (v1 > 0 && v1 < 255) {
+                            hrSum += v1;
                             hrCount++;
-                            // Modificar el ultimo punto si esta cerca en el tiempo
-                            if (points.length > 0) {
-                                points[points.length - 1].hr = hr;
+                            if (points.length > 0 && Math.abs(pointTime - points[points.length - 1].time) < 10000) {
+                                points[points.length - 1].hr = v1;
+                            } else {
+                                points.push({ lat: lastLat || 0, lng: lastLng || 0, hr: v1, time: pointTime, isHrOnly: true });
                             }
                         }
+                    } else {
+                        // Formato V1: pares de (offset, hr)
+                        const addHr = (timeOft, hr) => {
+                            if (hr > 0 && hr < 255) {
+                                hrSum += hr;
+                                hrCount++;
+                                const hrTime = new Date(currentTimestamp.getTime() + ((totalTimeSecs + timeOft) * 1000));
+                                if (points.length > 0 && Math.abs(hrTime - points[points.length - 1].time) < 5000) {
+                                    points[points.length - 1].hr = hr;
+                                } else {
+                                    points.push({ lat: lastLat || 0, lng: lastLng || 0, hr: hr, time: hrTime, isHrOnly: true });
+                                }
+                            }
+                        };
+                        addHr(v1, v2);
+                        addHr(v3, v4);
+                        addHr(v5, v6);
                     }
                     break;
+
+                // Ignoramos otras Flags (Speed, Pause, Resume, Swimming)
             }
 
-            // Consumir el tamaño del chunk (asumiendo que length incluye el header Type+Length)
-            // Para evitar bucles infinitos si length es < 2, siempre avanzamos al menos 2 bytes
-            offset = initialOffset + Math.max(2, length);
+            offset += 8;
         }
 
-        // Calcular duración
-        if (firstPointTime && lastPointTime) {
-            totalTimeSecs = Math.abs(lastPointTime.getTime() - firstPointTime.getTime()) / 1000;
-        }
+        // Filtramos para el mapa pero guardamos datos de stats
+        const mapPoints = points.filter(p => !p.isHrOnly);
 
         const hrs = Math.floor(totalTimeSecs / 3600);
         const mins = Math.floor((totalTimeSecs % 3600) / 60);
@@ -197,11 +174,11 @@ class ActivityParser {
         const durationStr = `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
         return {
-            points: points,
+            points: mapPoints.length > 0 ? mapPoints : points,
             stats: {
                 distance: totalDistance.toFixed(2), // en km
                 duration: totalTimeSecs > 0 ? durationStr : "--:--:--",
-                calories: Math.floor(totalDistance * 60) || "--", // Estimación inventada
+                calories: Math.floor(totalDistance * 60) || "--",
                 avgHeartRate: hrCount > 0 ? Math.floor(hrSum / hrCount) : "--"
             },
             isRealData: true
