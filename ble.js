@@ -5,8 +5,8 @@
 
 const HUAMI_SERVICE_ID = '0000fee0-0000-1000-8000-00805f9b34fb';
 const AUTH_CHAR_ID = '00000009-0000-3512-2118-0009af100700';
-const FETCH_CONTROL_ID = '00000005-0000-3512-2118-0009af100700';
-const FETCH_DATA_ID = '00000004-0000-3512-2118-0009af100700';
+const FETCH_CONTROL_ID = '00000004-0000-3512-2118-0009af100700';
+const FETCH_DATA_ID = '00000005-0000-3512-2118-0009af100700';
 const TIME_SERVICE_ID = '00001805-0000-1000-8000-00805f9b34fb';
 const TIME_CHAR_ID = '00002a2b-0000-1000-8000-00805f9b34fb';
 
@@ -420,117 +420,80 @@ class AmazfitDevice {
     _handleActivityData(event) {
         const data = new Uint8Array(event.target.value.buffer);
 
-        // Detección de tipos de paquetes sin loguear datos brutos (Velocidad Crítica)
-        const isControl = data.length <= 3 && data[0] === 0x10;
-        const isHeader = data.length === 15 && data[0] === 0x10;
-
-        if (isControl || isHeader) {
-            const hex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
-            this.log(`Control: [${hex}] (${data.length} bytes)`, "ble");
-        }
+        // El canal 0004 recibe notificaciones de control. Los datos puros van al canal 0005.
+        // Todo lo que empieza por 0x10 es un paquete de Response/Control.
+        const isControl = data[0] === 0x10;
 
         if (isControl) {
-            const APP_VERSION = "1.3.22";
+            const hex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
+            this.log(`Control: [${hex}] (${data.length} bytes)`, "ble");
+
             const cmdReply = data[1];
             const status = data[2];
 
             if (cmdReply === 0x01 && status === 0x01) {
-                if (this.totalReceived === 0) {
+                if (data.length >= 7) {
+                    // Start date response success (length 15 or 16)
+                    const expectedBytes = data[3] | (data[4] << 8) | (data[5] << 16) | (data[6] << 24);
+                    this.log(`Handshake Fetch OK (10 01 01). Esperando ${expectedBytes} paquetes.`, "system");
+                    if (expectedBytes === 0) {
+                        this.log("No hay datos nuevos para sincronizar.", "system");
+                        this._finalizeSync();
+                        return;
+                    }
+                } else {
                     this.log("Handshake inicial OK (10 01 01).", "ble");
-                    if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
-                } else if (this.totalReceived > 1000) {
-                    this.log("¡Señal de finalización detectada!", "system");
+                }
+
+                if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
+
+                this.log("Enviando comando START_FETCH (0x02)...", "ble");
+                setTimeout(() => {
+                    this.inTransferMode = true;
+                    this._safeWrite(new Uint8Array([0x02]), "START_FETCH", 5, this.fetchControlChar);
+                }, 250);
+                return;
+            }
+
+            if (cmdReply === 0x01 && status === 0x02) {
+                this.log("Rechazo 0x01 al solicitar datos. Reintentando...", "error");
+                setTimeout(() => this._retryWithExtendedCommand(), 2000);
+                return;
+            }
+
+            if (cmdReply === 0x02) {
+                if (status === 0x01) {
+                    this.log("Fin de transmisión de datos detectado (10 02 01). Enviando ACK final...", "system");
+                    // Zepp OS ACK: [0x03, 0x09] (Mantener en reloj) o [0x03, 0x01] (Borrar del reloj)
+                    setTimeout(() => {
+                        this._safeWrite(new Uint8Array([0x03, 0x09]), "ACK_FINAL_ZEPP", 5, this.fetchControlChar);
+                        this._finalizeSync();
+                    }, 500);
+                } else {
+                    this.log(`Fallo en transferencia (10 02 ${status.toString(16)}).`, "error");
                     this._finalizeSync();
                 }
                 return;
             }
 
-            if (cmdReply === 0x01 && status === 0x02) {
-                // v1.3.17: Solo reintentamos si NO estamos ya recibiendo datos.
-                // Usamos inTransferMode para una detección más fiable.
-                if (this.totalReceived === 0 && !this.inTransferMode) {
-                    this.log("Rechazo 0x01. Iniciando modo de compatibilidad (Full Sync) tras 2s...", "error");
-                    setTimeout(() => this._retryWithExtendedCommand(), 2000);
-                } else {
-                    this.log("Aviso: Rechazo 01 ignorado (Bucle de flujo detectado).", "system");
-                }
-                return;
-            }
-
-            if (cmdReply === 0x03 && status === 0x01) {
-                this.log("Puerta 0x03 abierta. Disparando 0x05...", "ble");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x05])), 250);
-                return;
-            }
-
-            if (cmdReply === 0x05 && status === 0x02) {
-                this.log("Rechazo 0x05. Probando 0x04...", "error");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x04])), 250);
-                return;
-            }
-
-            if (cmdReply === 0x04 && status === 0x02) {
-                this.log("Rechazo 0x04. Probando 0x01...", "error");
-                setTimeout(() => this._sendSyncAck(new Uint8Array([0x01])), 250);
-                return;
-            }
-
-            if (cmdReply === 0x02) {
-                const now = Date.now();
-                if (this.lastAckBlock === status && (now - this.lastAckTime < 200)) return;
-
-                this.lastAckBlock = status;
-                this.lastAckTime = now;
-
-                this.log(`Reloj solicita ACK para bloque ${status}. Respondiendo vía Control (300ms)...`, "ble");
-                // v1.3.21: Restauramos ACK Huami Standard [02, status, 01] para máxima compatibilidad
-                setTimeout(() => {
-                    this._sendSyncAck(new Uint8Array([0x02, status, 0x01]), false);
-                }, 300);
-                return;
-            }
-
-            // Cualquier otro paquete de control no se acumula
+            // Ignoramos otros paquetes de control
             return;
         }
 
-        if (isHeader && data[1] === 0x01) {
-            const lastByte = data[14];
-            this.log(`Cabecera v2 detectada (Index: ${lastByte}). Handshake Bridge (300ms)...`, "ble");
-
-            this.inTransferMode = true;
-            this.lastAckBlock = lastByte;
-            this.lastAckTime = Date.now();
-
-            // v1.3.21: Handshake Robusto: 
-            // 1. Eco de Handshake (Confirma recepción de cabecera)
-            setTimeout(() => this._sendSyncAck(new Uint8Array([0x01, 0x01]), false), 100);
-            // 2. ACK de Bloque inicial (Petición de datos) usando formato estándar
-            setTimeout(() => this._sendSyncAck(new Uint8Array([0x02, lastByte, 0x01]), false), 400);
-
-            return;
-        }
-        // ACUMULACIÓN ULTRA-RÁPIDA (Solo datos reales)
+        // ACUMULACIÓN DE DATOS REALES
         this.activityChunks.push(data);
         const oldTotal = this.totalReceived;
         this.totalReceived += data.length;
 
-        // v1.3.4: Log de chunks de datos (solo cada 1KB para no saturar el log)
-        if (Math.floor(this.totalReceived / 1024) > Math.floor(oldTotal / 1024)) {
+        // Log de chunks de datos (cada 4KB para no saturar el log)
+        if (Math.floor(this.totalReceived / 4096) > Math.floor(oldTotal / 4096)) {
             const preview = data.length > 4 ? Array.from(data.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ') : "";
             this.log(`[DATA] Recibido: ${(this.totalReceived / 1024).toFixed(1)} KB (Last: ${data.length}b, Hex: ${preview})`, "ble");
         }
 
-        // ACK PROGRESIVO: Si no enviamos nada, el reloj se pausa cada 2-4KB.
-        // Enviamos un confirmador ligero cada 2KB para mantener el flujo abierto.
-        if (Math.floor(this.totalReceived / 2048) > Math.floor(oldTotal / 2048)) {
-            // v1.3.1: Usamos sin respuesta para no congestionar el flujo de datos
-            this._sendSyncAck(new Uint8Array([0x02]), true);
-        }
-
-        // Throttling y Detección de Inactividad
+        // Throttling y Detección de Inactividad (Zepp OS no necesita ACK progresivo)
         if (this.syncTimeout) clearTimeout(this.syncTimeout);
-        this.syncTimeout = setTimeout(() => this._finalizeSync(), 3000); // 3s de silencio = FIN
+        this.syncTimeout = setTimeout(() => this._finalizeSync(), 5000); // 5s de silencio = FIN
 
         const now = Date.now();
         if (now - this.lastUiUpdate > 300) {
