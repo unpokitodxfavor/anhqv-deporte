@@ -124,6 +124,12 @@ class AmazfitDevice {
                                 this.log("Canal de AUTH (09) localizado.", "ble");
                             }
 
+                            // Detección de Canal de HORA (2a2b) - v1.3.23
+                            if (uuid === TIME_CHAR_ID) {
+                                this.timeChar = c;
+                                this.log("Canal de HORA (2a2b) localizado durante escaneo profundo.", "ble");
+                            }
+
                             // Detección Adaptativa de canal de mando (MANDATORIA v1.3.21)
                             // v1.3.21: Priorizamos Canal 05 como el mando más estable
                             if (uuid === FETCH_CONTROL_ID) {
@@ -167,9 +173,17 @@ class AmazfitDevice {
         try {
             const timeService = await this.server.getPrimaryService(TIME_SERVICE_ID);
             this.timeChar = await timeService.getCharacteristic(TIME_CHAR_ID);
-            this.log("Servicio de Hora localizado.", "ble");
+            this.log("Servicio de Hora estándar localizado.", "ble");
         } catch (e) {
-            this.log("Aviso: El reloj no expone el servicio de hora estándar.", "system");
+            this.log("Aviso: El reloj no expone el servicio de hora estándar. Buscando en FEE0...", "system");
+            if (!this.timeChar) {
+                try {
+                    this.timeChar = await this.service.getCharacteristic(TIME_CHAR_ID);
+                    this.log("Característica de Hora (2a2b) localizada en FEE0.", "ble");
+                } catch (e2) {
+                    this.log("No se pudo localizar el canal de hora.", "error");
+                }
+            }
         }
 
         // Iniciar Handshake
@@ -358,8 +372,11 @@ class AmazfitDevice {
             // SECUENCIA ATÓMICA v1.3.9: Fases secuenciales adaptativas
 
             // Fase 1: Descarga Directa
-            this.log("Fase 1: Descarga Directa (Detección Adaptativa)...", "ble");
-            const directFetch = new Uint8Array([0x01, 0x01, 0xE2, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
+            this.log("Fase 1: Descarga Directa (Huami Standard Fetch)...", "ble");
+            // v1.3.25: Usar una fecha segura del pasado (2020-01-01) en lugar de una futura.
+            // Formato: 01 01 YYYY(2) MM DD HH MIN SS 00
+            // 2020 = 0x07E4 -> E4 07
+            const directFetch = new Uint8Array([0x01, 0x01, 0xE4, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
             await this._safeWrite(directFetch, "DIRECT_FETCH", 20, this.fetchControlChar);
 
             // Espera activa v1.3.13: 10s para ver si Fase 1 arranca el flujo
@@ -368,7 +385,7 @@ class AmazfitDevice {
             // Fase 2: Handshake Secundario (v1.3.18: Blindado por inTransferMode)
             if (this.totalReceived === 0 && !this.inTransferMode) {
                 this.log("Fase 1 sin respuesta de datos. Iniciando Fase 2: Secundario...", "system");
-                const secondaryCmd = new Uint8Array([0x01, 0x01, 0xE8, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]);
+                const secondaryCmd = new Uint8Array([0x01, 0x01, 0xE4, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]);
                 await this._safeWrite(secondaryCmd, "SECONDARY", 15, this.fetchControlChar);
                 await new Promise(r => setTimeout(r, 10000));
             } else if (this.inTransferMode) {
@@ -638,11 +655,10 @@ class AmazfitDevice {
     }
 
     async _forceAuthorizeFetch() {
-        this.log("Enviando comando de Emergencia v2 (Control Estricto)...", "system");
-        // Variante 0x01 0x01 + 8 bytes de 0x00 (Soft Fetch Force)
-        const authFetch = new Uint8Array([0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        // v1.3.5: Forzamos el canal de control para la emergencia
-        await this._safeWrite(authFetch, "EMERGENCY_V2", 5, this.fetchControlChar);
+        this.log("Enviando comando de Emergencia v3 (Force Header)...", "system");
+        // v1.3.23: Variante Huami Standard Fetch Header (01 10 ...)
+        const authFetch = new Uint8Array([0x01, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        await this._safeWrite(authFetch, "EMERGENCY_V3", 5, this.fetchControlChar);
     }
 
     async _syncTime() {
