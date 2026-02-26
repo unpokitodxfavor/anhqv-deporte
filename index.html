@@ -47,33 +47,51 @@
                 </div>
             </section>
 
-            <section id="stats-section" class="card hidden">
-                <div class="card-header">
-                    <h2>3. Detalle de Actividad</h2>
-                    <div class="header-actions">
-                        <button id="download-gpx" class="btn small primary">⬇ Descargar GPX</button>
-                        <button id="close-stats" class="btn close">✖</button>
-                    </div>
+            <section id="stats-section" class="fullscreen-overlay hidden">
+                <div id="map" class="map-fullscreen"></div>
+
+                <div class="floating-header">
+                    <button id="close-stats" class="btn-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                    </button>
+                    <h2>Caminata de hoy</h2>
+                    <button id="download-gpx" class="btn-icon"
+                        style="border:none;background:none;font-size:20px;cursor:pointer;">⬇</button>
                 </div>
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <span class="label">Distancia</span>
+
+                <div class="floating-stats">
+                    <div class="stat-card large-span">
+                        <span class="label">Distancia total:</span>
                         <span class="value" id="stat-dist">0.0 km</span>
                     </div>
-                    <div class="stat-item">
-                        <span class="label">Tiempo</span>
-                        <span class="value" id="stat-time">00:00:00</span>
+
+                    <div class="stats-row">
+                        <div class="stat-card">
+                            <span class="label">Calorías:</span>
+                            <span class="value" id="stat-cal">0 kcal</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="label">Duración:</span>
+                            <span class="value" id="stat-time">00:00:00</span>
+                        </div>
                     </div>
-                    <div class="stat-item">
-                        <span class="label">Calorías</span>
-                        <span class="value" id="stat-cal">0 kcal</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="label">Pulsaciones</span>
-                        <span class="value" id="stat-hr">-- bpm</span>
+
+                    <div class="stats-row">
+                        <div class="stat-card">
+                            <span class="label">Ritmo medio:</span>
+                            <span class="value" id="stat-pace">-- min/km</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="label">Pulsaciones:</span>
+                            <span class="value" id="stat-hr">-- bpm</span>
+                        </div>
                     </div>
                 </div>
-                <div id="map" class="map-container"></div>
             </section>
 
             <section id="log-section" class="card">
@@ -101,11 +119,11 @@
     <!-- Scripts -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <!-- Carga de scripts con cache buster dinámico v1.3.34 -->
-    <script src="parser.js?v=1.3.34"></script>
-    <script src="ble.js?v=1.3.34"></script>
-    <script src="map.js?v=1.3.34"></script>
-    <script src="app.js?v=1.3.34"></script>
+    <!-- Carga de scripts con cache buster dinámico v1.3.35 -->
+    <script src="parser.js?v=1.3.35"></script>
+    <script src="ble.js?v=1.3.35"></script>
+    <script src="map.js?v=1.3.35"></script>
+    <script src="app.js?v=1.3.35"></script>
 </body>
 
 </html>

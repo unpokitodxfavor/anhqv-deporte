@@ -6,17 +6,21 @@ class SportMap {
     constructor(elementId) {
         this.map = null;
         this.polyline = null;
-        this.marker = null;
+        this.startMarker = null;
+        this.endMarker = null;
         this.elementId = elementId;
     }
 
     init() {
         if (this.map) return;
 
-        this.map = L.map(this.elementId).setView([40.4168, -3.7038], 13);
+        // Limpiar controles por defecto para una UI inmersiva
+        this.map = L.map(this.elementId, { zoomControl: false }).setView([40.4168, -3.7038], 13);
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap &copy; CARTO'
+        // Capa satélite tipo Esri (ideal para ver terrenos y rutas)
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; Esri',
+            maxZoom: 18
         }).addTo(this.map);
     }
 
@@ -26,7 +30,8 @@ class SportMap {
         if (!points || points.length === 0) {
             console.warn("No hay puntos GPS para renderizar en el mapa.");
             if (this.polyline) this.map.removeLayer(this.polyline);
-            if (this.marker) this.map.removeLayer(this.marker);
+            if (this.startMarker) this.map.removeLayer(this.startMarker);
+            if (this.endMarker) this.map.removeLayer(this.endMarker);
             return;
         }
 
@@ -36,26 +41,39 @@ class SportMap {
             this.map.removeLayer(this.polyline);
         }
 
+        // Ruta azul brillante como en la referencia
         this.polyline = L.polyline(latLngs, {
-            color: '#ff3e3e',
-            weight: 5,
-            opacity: 0.8,
-            smoothFactor: 1
+            color: '#0b66ff',
+            weight: 6,
+            opacity: 1,
+            lineJoin: 'round',
+            lineCap: 'round'
         }).addTo(this.map);
 
-        // Ajustar vista
-        this.map.fitBounds(this.polyline.getBounds(), { padding: [20, 20] });
+        this.map.fitBounds(this.polyline.getBounds(), { padding: [50, 50] });
 
-        // Añadir marcador de inicio
-        if (this.marker) this.map.removeLayer(this.marker);
-        this.marker = L.circleMarker(latLngs[0], {
+        // Marcador Inicio (Verde)
+        if (this.startMarker) this.map.removeLayer(this.startMarker);
+        this.startMarker = L.circleMarker(latLngs[0], {
             radius: 8,
-            fillColor: '#00ff88',
-            color: '#fff',
-            weight: 2,
+            fillColor: '#00cc66',
+            color: '#ffffff',
+            weight: 3,
             opacity: 1,
-            fillOpacity: 0.8
-        }).addTo(this.map).bindPopup('Inicio del ejercicio');
+            fillOpacity: 1
+        }).addTo(this.map);
+
+        // Marcador Fin (Rojo)
+        const lastPoint = latLngs[latLngs.length - 1];
+        if (this.endMarker) this.map.removeLayer(this.endMarker);
+        this.endMarker = L.circleMarker(lastPoint, {
+            radius: 8,
+            fillColor: '#fc3d39',
+            color: '#ffffff',
+            weight: 3,
+            opacity: 1,
+            fillOpacity: 1
+        }).addTo(this.map);
     }
 }
 
