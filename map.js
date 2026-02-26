@@ -23,6 +23,13 @@ class SportMap {
     renderRoute(points) {
         if (!this.map) this.init();
 
+        if (!points || points.length === 0) {
+            console.warn("No hay puntos GPS para renderizar en el mapa.");
+            if (this.polyline) this.map.removeLayer(this.polyline);
+            if (this.marker) this.map.removeLayer(this.marker);
+            return;
+        }
+
         const latLngs = points.map(p => [p.lat, p.lng]);
 
         if (this.polyline) {

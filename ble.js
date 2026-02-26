@@ -372,11 +372,11 @@ class AmazfitDevice {
             // SECUENCIA ATÓMICA v1.3.9: Fases secuenciales adaptativas
 
             // Fase 1: Descarga Directa
-            this.log("Fase 1: Descarga Directa (Huami Standard Fetch)...", "ble");
-            // v1.3.25: Usar una fecha segura del pasado (2020-01-01) en lugar de una futura.
-            // Formato: 01 01 YYYY(2) MM DD HH MIN SS 00
-            // 2020 = 0x07E4 -> E4 07
-            const directFetch = new Uint8Array([0x01, 0x01, 0xE4, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
+            this.log("Fase 1: Descarga Directa (SPORTS_DETAILS - 0x06)...", "ble");
+            // v1.3.34: Fetch SPORTS_DETAILS (0x06) en lugar de ACTIVITY_HISTORY (0x01)
+            // 0x01 es History (Steps, Sleep, HR por minutos). 0x06 es los tracks de GPS reales.
+            // Para obtener la última actividad o todas desde una fecha. Usamos 2020-01-01 (0xE4 0x07 01 01)
+            const directFetch = new Uint8Array([0x01, 0x06, 0xE4, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
             await this._safeWrite(directFetch, "DIRECT_FETCH", 20, this.fetchControlChar);
 
             // Espera activa v1.3.13: 10s para ver si Fase 1 arranca el flujo
@@ -385,7 +385,7 @@ class AmazfitDevice {
             // Fase 2: Handshake Secundario (v1.3.18: Blindado por inTransferMode)
             if (this.totalReceived === 0 && !this.inTransferMode) {
                 this.log("Fase 1 sin respuesta de datos. Iniciando Fase 2: Secundario...", "system");
-                const secondaryCmd = new Uint8Array([0x01, 0x01, 0xE4, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]);
+                const secondaryCmd = new Uint8Array([0x01, 0x06, 0xE4, 0x07, 0x02, 0x15, 0x0A, 0x00, 0x00, 0x00]);
                 await this._safeWrite(secondaryCmd, "SECONDARY", 15, this.fetchControlChar);
                 await new Promise(r => setTimeout(r, 10000));
             } else if (this.inTransferMode) {
@@ -515,14 +515,23 @@ class AmazfitDevice {
         this.syncTimeout = null;
         this.syncWatchdog = null;
 
-        // Reconstrucción única y final (O(n))
-        const fullBuffer = new Uint8Array(this.totalReceived);
-        if (this.totalReceived > 0) {
-            this.log(`Finalizando captura. Reconstruyendo ${this.totalReceived} bytes...`, "system");
+        // Reconstrucción final: Quitar el primer byte (Seq Number) de cada chunk (Huami MTU)
+        let totalPayloadSize = 0;
+        for (const chunk of this.activityChunks) {
+            if (chunk.length > 1) {
+                totalPayloadSize += chunk.length - 1;
+            }
+        }
+
+        const fullBuffer = new Uint8Array(totalPayloadSize);
+        if (totalPayloadSize > 0) {
+            this.log(`Finalizando captura. Reconstruyendo ${totalPayloadSize} bytes de payload puro...`, "system");
             let offset = 0;
             for (const chunk of this.activityChunks) {
-                fullBuffer.set(chunk, offset);
-                offset += chunk.length;
+                if (chunk.length > 1) {
+                    fullBuffer.set(chunk.slice(1), offset);
+                    offset += (chunk.length - 1);
+                }
             }
         }
 
