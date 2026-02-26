@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const VITE_SUSTAINABILITY = false;
     const OFFLINE = false;
-    const APP_VERSION = "v1.3.31";
+    const APP_VERSION = "v1.3.32";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -222,6 +222,32 @@ document.addEventListener('DOMContentLoaded', () => {
             // Renderizar mapa
             window.sportMap.init();
             window.sportMap.renderRoute(data.points);
+
+            // Refrescar tamaño tras render porque estaba oculto
+            setTimeout(() => {
+                if (window.sportMap.map) {
+                    window.sportMap.map.invalidateSize();
+                    if (window.sportMap.polyline && data.points.length > 0) {
+                        window.sportMap.map.fitBounds(window.sportMap.polyline.getBounds(), { padding: [20, 20] });
+                    }
+                }
+            }, 300);
+
+            // Botón GPX
+            const gpxBtn = document.getElementById('download-gpx');
+            if (gpxBtn) {
+                gpxBtn.onclick = () => {
+                    const gpxStr = ActivityParser.exportToGPX(data);
+                    const blob = new Blob([gpxStr], { type: "application/gpx+xml" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `amazfit_rutas_${new Date().toISOString().replace(/[:.]/g, '-')}.gpx`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    log("GPX exportado correctamente.", "system");
+                };
+            }
         };
 
         // Insertar al principio de la lista

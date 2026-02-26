@@ -62,8 +62,10 @@ class ActivityParser {
         let totalTimeSecs = 0;
         let lastTimeOffset = 0;
 
-        let baseLng = 0;
-        let baseLat = 0;
+        // Inicializar coordenadas a Madrid por defecto si no están en el buffer
+        // (Huami RTOS a veces da baseLng y baseLat en un paquete separado Summary)
+        let baseLng = Math.floor(-3.7038 * 3000000);
+        let baseLat = Math.floor(40.4168 * 3000000);
 
         const points = [];
         let totalDistance = 0;
@@ -183,6 +185,36 @@ class ActivityParser {
             },
             isRealData: true
         };
+    }
+
+    static exportToGPX(parsedData) {
+        let gpx = '<?xml version="1.0" encoding="UTF-8"?>\n';
+        gpx += '<gpx version="1.1" creator="Amazfit Dashboard" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd http://www.garmin.com/xmlschemas/GpxExtensions/v3 http://www.garmin.com/xmlschemas/GpxExtensionsv3.xsd http://www.garmin.com/xmlschemas/TrackPointExtension/v1 http://www.garmin.com/xmlschemas/TrackPointExtensionv1.xsd">\n';
+        gpx += '  <trk>\n';
+        gpx += '    <name>Actividad Amazfit Bip U Pro</name>\n';
+        gpx += '    <trkseg>\n';
+
+        parsedData.points.forEach(point => {
+            if (point.lat && point.lng) {
+                gpx += `      <trkpt lat="${point.lat.toFixed(6)}" lon="${point.lng.toFixed(6)}">\n`;
+                if (point.time) {
+                    gpx += `        <time>${point.time.toISOString()}</time>\n`;
+                }
+                if (point.hr && point.hr > 0) {
+                    gpx += `        <extensions>\n`;
+                    gpx += `          <gpxtpx:TrackPointExtension xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">\n`;
+                    gpx += `            <gpxtpx:hr>${point.hr}</gpxtpx:hr>\n`;
+                    gpx += `          </gpxtpx:TrackPointExtension>\n`;
+                    gpx += `        </extensions>\n`;
+                }
+                gpx += `      </trkpt>\n`;
+            }
+        });
+
+        gpx += '    </trkseg>\n';
+        gpx += '  </trk>\n';
+        gpx += '</gpx>';
+        return gpx;
     }
 
     // Calcula distancia Haversine en km
