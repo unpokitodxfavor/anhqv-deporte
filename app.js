@@ -220,6 +220,8 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('stat-time').innerText = data.stats.duration;
             document.getElementById('stat-cal').innerText = data.stats.calories + ' kcal';
             document.getElementById('stat-hr').innerText = data.stats.avgHeartRate + ' bpm';
+            const paceEl = document.getElementById('stat-pace');
+            if (paceEl) paceEl.innerText = (data.stats.pace || "--:--") + ' min/km';
 
             activitySection.classList.add('hidden');
             statsSection.classList.remove('hidden');

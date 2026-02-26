@@ -183,11 +183,21 @@ class ActivityParser {
         const secs = Math.floor(totalTimeSecs % 60);
         const durationStr = `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
+        // Cálculo de ritmo (min/km)
+        let paceStr = "--:--";
+        if (totalDistance > 0.1 && totalTimeSecs > 10) {
+            const paceMinTotal = (totalTimeSecs / 60) / totalDistance;
+            const pMins = Math.floor(paceMinTotal);
+            const pSecs = Math.floor((paceMinTotal - pMins) * 60);
+            paceStr = `${pMins}:${pSecs.toString().padStart(2, '0')}`;
+        }
+
         return {
             points: mapPoints.length > 0 ? mapPoints : points,
             stats: {
                 distance: totalDistance.toFixed(2), // en km
                 duration: totalTimeSecs > 0 ? durationStr : "--:--:--",
+                pace: paceStr,
                 calories: Math.floor(totalDistance * 60) || "--",
                 avgHeartRate: hrCount > 0 ? Math.floor(hrSum / hrCount) : "--"
             },
