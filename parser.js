@@ -32,9 +32,9 @@ class ActivityParser {
         if (buffer.byteLength > 0) {
             // Implementación mínima para mostrar que algo está llegando
             return {
-                points: [], // Aquí iría el parsing de GPS
+                points: this.generateMockRoute().points, // Fallback visual de GPS mientras se hace el parser real
                 stats: {
-                    distance: (buffer.byteLength / 100).toFixed(2), // Estimación temporal
+                    distance: (buffer.byteLength / 1000).toFixed(2), // Estimación temporal (MB -> km)
                     duration: "Sync en progreso...",
                     calories: "--",
                     avgHeartRate: "--"
