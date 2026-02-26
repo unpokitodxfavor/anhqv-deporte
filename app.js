@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const VITE_SUSTAINABILITY = false;
     const OFFLINE = false;
-    const APP_VERSION = "v1.3.35";
+    const APP_VERSION = "v1.3.36";
 
     // --- Logger ---
     function log(message, type = 'system') {

@@ -110,6 +110,9 @@ class ActivityParser {
                     const lngDelta = view.getInt16(offset + 2, true);
                     const latDelta = view.getInt16(offset + 4, true);
 
+                    // Intentar detectar si el reloj nos da la ubicación real base
+                    // Si baseLng o baseLat son los de Madrid (nuestro fallback), 
+                    // intentamos ver si el primer paquete tiene sentido.
                     baseLng += lngDelta;
                     baseLat += latDelta;
 
@@ -117,7 +120,11 @@ class ActivityParser {
                     const curLat = huamiToDegrees(baseLat);
 
                     if (lastLat !== null && lastLng !== null) {
-                        totalDistance += this._calcDistance(lastLat, lastLng, curLat, curLng);
+                        const dist = this._calcDistance(lastLat, lastLng, curLat, curLng);
+                        // Filtro de ruido: si el salto es > 50km entre puntos, es un error de coordenadas base
+                        if (dist < 50) {
+                            totalDistance += dist;
+                        }
                     }
                     lastLat = curLat;
                     lastLng = curLng;
