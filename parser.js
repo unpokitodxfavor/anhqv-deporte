@@ -181,8 +181,9 @@ class ActivityParser {
                     break;
             }
 
-            // Consumir el tamaño del chunk
-            offset = initialOffset + length;
+            // Consumir el tamaño del chunk (asumiendo que length incluye el header Type+Length)
+            // Para evitar bucles infinitos si length es < 2, siempre avanzamos al menos 2 bytes
+            offset = initialOffset + Math.max(2, length);
         }
 
         // Calcular duración
