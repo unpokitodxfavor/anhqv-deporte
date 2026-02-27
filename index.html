@@ -20,38 +20,101 @@
                 <span class="icon">⚡</span>
                 <h1>Amazfit Dashboard</h1>
             </div>
+            <div class="nav-links">
+                <button id="nav-activities" class="nav-btn active">Reciente</button>
+                <button id="nav-stats" class="nav-btn">Progreso</button>
+                <button id="nav-settings" class="nav-btn">⚙️</button>
+            </div>
             <div class="connection-status" id="connection-status">
                 <span class="dot"></span> <span>Desconectado</span>
             </div>
         </header>
 
         <main>
-            <section id="auth-section" class="card">
-                <h2>1. Configuración</h2>
-                <p class="hint">Introduce tu Auth Key de 32 caracteres para vincular el reloj.</p>
-                <div class="input-group">
-                    <input type="password" id="auth-key" placeholder="Auth Key (32 hex chars)">
-                    <button id="save-key" class="btn secondary">💾</button>
-                </div>
-                <button id="connect-btn" class="btn primary">Conectar Reloj</button>
-                <p class="hint" style="text-align: center;">¿Necesitas ayuda? <a href="auth_key_guide.md">Ver guía</a>
-                </p>
+            <section id="activity-view">
+                <section id="auth-section" class="card">
+                    <h2>1. Configuración</h2>
+                    <p class="hint">Introduce tu Auth Key de 32 caracteres para vincular el reloj.</p>
+                    <div class="input-group">
+                        <input type="password" id="auth-key" placeholder="Auth Key (32 hex chars)">
+                        <button id="save-key" class="btn secondary">💾</button>
+                    </div>
+                    <button id="connect-btn" class="btn primary">Conectar Reloj</button>
+                    <p class="hint" style="text-align: center;">¿Necesitas ayuda? <a href="auth_key_guide.md">Ver
+                            guía</a>
+                    </p>
+                </section>
+
+                <section id="activity-list-section" class="card hidden">
+                    <div class="card-header">
+                        <h2>Actividades registradas</h2>
+                        <button id="refresh-activities" class="btn small primary">🔄 Sincronizar</button>
+                    </div>
+
+                    <div id="sync-options" class="hint"
+                        style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="clear-watch-data" style="width: 16px; height: 16px;">
+                        <label for="clear-watch-data">Borrar datos del reloj tras descargar</label>
+                    </div>
+
+                    <div id="activity-list" class="list-container">
+                        <p class="empty-msg">No hay actividades. Pulsa sincronizar para descargar datos reales.</p>
+                    </div>
+                </section>
             </section>
 
-            <section id="activity-list-section" class="card hidden">
-                <div class="card-header">
-                    <h2>Actividades registradas</h2>
-                    <button id="refresh-activities" class="btn small primary">🔄 Sincronizar</button>
+            <!-- Nueva sección de Estadísticas Globales -->
+            <section id="stats-dashboard-section" class="hidden">
+                <div class="stats-grid animate-fade">
+                    <div class="stat-card glass highlight">
+                        <span class="label">Total Histórico</span>
+                        <h2 id="global-total-dist">0.00 km</h2>
+                        <p id="global-total-count">0 actividades</p>
+                    </div>
+                    <div class="stat-card glass">
+                        <span class="label">Este Mes</span>
+                        <h2 id="month-total-dist">0.00 km</h2>
+                        <p id="month-total-time">--:--</p>
+                    </div>
+                    <div class="stat-card glass">
+                        <span class="label">Esta Semana</span>
+                        <h2 id="week-total-dist">0.00 km</h2>
+                        <p id="week-total-count">0 activ.</p>
+                    </div>
                 </div>
 
-                <div id="sync-options" class="hint"
-                    style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="clear-watch-data" style="width: 16px; height: 16px;">
-                    <label for="clear-watch-data">Borrar datos del reloj tras descargar</label>
+                <div class="card glass" style="margin-top: 20px;">
+                    <h3>Histórico por Meses</h3>
+                    <div id="stats-summary-list" class="list-container">
+                        <p class="empty-msg">Cargando estadísticas...</p>
+                    </div>
                 </div>
 
-                <div id="activity-list" class="list-container">
-                    <p class="empty-msg">No hay actividades. Pulsa sincronizar para descargar datos reales.</p>
+                <div class="card glass" style="margin-top: 20px;">
+                    <h3>Copia de Seguridad</h3>
+                    <button id="export-gdrive" class="btn secondary full-width">
+                        📁 Guardar Histórico en Google Drive
+                    </button>
+                </div>
+            </section>
+
+            <!-- Sección de Ajustes -->
+            <section id="settings-section" class="hidden">
+                <div class="card glass">
+                    <h3>Configuración de Google Drive</h3>
+                    <p class="hint">Para habilitar la subida automática, introduce tu Client ID de la consola de Google.
+                    </p>
+                    <div class="input-group">
+                        <input type="text" id="gdrive-client-id" placeholder="Google Client ID">
+                    </div>
+                    <p class="hint">Las actividades se guardan en una carpeta llamada 'AmazfitActivities'.</p>
+                </div>
+
+                <div class="card glass" style="margin-top: 20px;">
+                    <h3>Mantenimiento</h3>
+                    <button id="delete-local-history" class="btn danger full-width">🗑️ Borrar Historial Local</button>
+                    <p class="hint" style="margin-top: 10px;">Esto borrará las estadísticas acumuladas pero no los
+                        archivos descargados.</p>
                 </div>
             </section>
 
@@ -100,7 +163,7 @@
                     </div>
                 </div>
                 <div id="log-console" class="console">
-                    <div class="log-entry system">Listo para la acción. v1.4.0</div>
+                    <div class="log-entry system">Listo para la acción. v1.5.0</div>
                 </div>
             </section>
         </main>
@@ -117,10 +180,10 @@
     <!-- Libs -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script src="parser.js?v=1.4.0"></script>
-    <script src="ble.js?v=1.4.0"></script>
-    <script src="map.js?v=1.4.0"></script>
-    <script src="app.js?v=1.4.0"></script>
+    <script src="parser.js?v=1.5.0"></script>
+    <script src="ble.js?v=1.5.0"></script>
+    <script src="map.js?v=1.5.0"></script>
+    <script src="app.js?v=1.5.0"></script>
 </body>
 
 </html>

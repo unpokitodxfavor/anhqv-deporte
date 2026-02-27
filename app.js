@@ -1,13 +1,11 @@
 /**
  * app.js - Main Application Logic
  */
-console.log("==> Cargando app.js (v1.0.6) <==");
+console.log("==> Cargando app.js (v1.5.0) <==");
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM Cargado. Iniciando app logic...");
     const authSection = document.getElementById('auth-section');
-    const activitySection = document.getElementById('activity-list-section');
-    const statsSection = document.getElementById('stats-section');
     const connectBtn = document.getElementById('connect-btn');
     const saveKeyBtn = document.getElementById('save-key');
     const authKeyInput = document.getElementById('auth-key');
@@ -21,9 +19,144 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
 
+    // Navigation and View elements
+    const activitySection = document.getElementById('activity-list-section');
+    const activityView = document.getElementById('activity-view');
+    const statsDashboard = document.getElementById('stats-dashboard-section');
+    const settingsSection = document.getElementById('settings-section');
+    const statsSection = document.getElementById('stats-section');
+
+    const navActivities = document.getElementById('nav-activities');
+    const navStats = document.getElementById('nav-stats');
+    const navSettings = document.getElementById('nav-settings');
+
+    function showView(viewId) {
+        // Ocultar todas las secciones principales
+        [activityView, statsDashboard, settingsSection].forEach(v => {
+            if (v) v.classList.add('hidden');
+        });
+
+        // Desactivar botones nav
+        [navActivities, navStats, navSettings].forEach(n => {
+            if (n) n.classList.remove('active');
+        });
+
+        if (viewId === 'activities') {
+            activityView.classList.remove('hidden');
+            navActivities?.classList.add('active');
+        } else if (viewId === 'stats') {
+            statsDashboard?.classList.remove('hidden');
+            navStats?.classList.add('active');
+            updateGlobalStats();
+        } else if (viewId === 'settings') {
+            settingsSection?.classList.remove('hidden');
+            navSettings?.classList.add('active');
+        }
+    }
+
+    navActivities?.addEventListener('click', () => showView('activities'));
+    navStats?.addEventListener('click', () => showView('stats'));
+    navSettings?.addEventListener('click', () => showView('settings'));
+
+    // Persistent storage Logic
+    let allActivities = [];
+    try {
+        const stored = localStorage.getItem('amazfit_db');
+        if (stored) allActivities = JSON.parse(stored);
+    } catch (e) { console.error("Error loading DB", e); }
+
+    function saveToDb(activity) {
+        if (!allActivities.find(a => a.timestamp === activity.timestamp)) {
+            const summary = {
+                timestamp: activity.timestamp,
+                stats: activity.stats,
+                pointsCount: activity.points.length
+            };
+            allActivities.push(summary);
+            localStorage.setItem('amazfit_db', JSON.stringify(allActivities));
+        }
+    }
+
+    function updateGlobalStats() {
+        const statsListEl = document.getElementById('stats-summary-list');
+        const totalDistEl = document.getElementById('global-total-dist');
+        const totalCountEl = document.getElementById('global-total-count');
+        const monthDistEl = document.getElementById('month-total-dist');
+        const weekDistEl = document.getElementById('week-total-dist');
+
+        if (allActivities.length === 0) {
+            if (statsListEl) statsListEl.innerHTML = '<p class="empty-msg">No hay datos. Sincroniza tu reloj para empezar.</p>';
+            return;
+        }
+
+        let totalDist = 0;
+        let monthDist = 0;
+        let weekDist = 0;
+        let weekCount = 0;
+
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay());
+
+        allActivities.forEach(act => {
+            const d = parseFloat(act.stats.distance) || 0;
+            totalDist += d;
+
+            const actDate = new Date(act.timestamp);
+            if (actDate >= startOfMonth) monthDist += d;
+            if (actDate >= startOfWeek) {
+                weekDist += d;
+                weekCount++;
+            }
+        });
+
+        if (totalDistEl) totalDistEl.innerText = `${totalDist.toFixed(2)} km`;
+        if (totalCountEl) totalCountEl.innerText = `${allActivities.length} actividades`;
+        if (monthDistEl) monthDistEl.innerText = `${monthDist.toFixed(2)} km`;
+        if (weekDistEl) weekDistEl.innerText = `${weekDist.toFixed(2)} km`;
+        const weekCountEl = document.getElementById('week-total-count');
+        if (weekCountEl) weekCountEl.innerText = `${weekCount} activ.`;
+
+        // Monthly grouping
+        const groups = {};
+        allActivities.forEach(act => {
+            const date = new Date(act.timestamp);
+            const key = date.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+            if (!groups[key]) groups[key] = { dist: 0, count: 0 };
+            groups[key].dist += parseFloat(act.stats.distance) || 0;
+            groups[key].count++;
+        });
+
+        if (statsListEl) {
+            statsListEl.innerHTML = '';
+            Object.keys(groups).forEach(key => {
+                const item = document.createElement('div');
+                item.className = 'activity-item';
+                item.style.cursor = 'default';
+                item.innerHTML = `
+                    <div class="activity-info">
+                        <h4 style="text-transform: capitalize;">${key}</h4>
+                        <span>${groups[key].dist.toFixed(2)} km • ${groups[key].count} sesiones</span>
+                    </div>
+                `;
+                statsListEl.appendChild(item);
+            });
+        }
+    }
+
+    document.getElementById('delete-local-history')?.addEventListener('click', () => {
+        if (confirm("¿Estás seguro de borrar todo el historial acumulado?")) {
+            localStorage.removeItem('amazfit_db');
+            allActivities = [];
+            updateGlobalStats();
+            log("Historial local borrado.", "system");
+        }
+    });
+
     const VITE_SUSTAINABILITY = false;
     const OFFLINE = false;
-    const APP_VERSION = "v1.3.36";
+    const APP_VERSION = "v1.5.0";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -199,6 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
             activities.forEach((act, index) => {
                 if (act && act.isRealData && act.points.length > 0) {
                     renderRealActivity(act, index + 1);
+                    saveToDb(act); // PERSISTIR
                     if (act.timestamp > lastTimestamp) lastTimestamp = act.timestamp;
                 }
             });
@@ -284,7 +418,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     closeStatsBtn.addEventListener('click', () => {
         statsSection.classList.add('hidden');
-        activitySection.classList.remove('hidden');
+        activityView.classList.remove('hidden'); // Editado para usar activityView
     });
 
     // --- Lógica de Negocio ---
