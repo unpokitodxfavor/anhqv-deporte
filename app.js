@@ -195,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const CLIENT_ID_INPUT = document.getElementById('gdrive-client-id');
 
     async function initGoogleDrive() {
-        const CLIENT_ID = CLIENT_ID_INPUT?.value || localStorage.getItem('gdrive_client_id');
+        const CLIENT_ID = CLIENT_ID_INPUT?.value || localStorage.getItem('gdrive_client_id') || window.APP_CONFIG?.GOOGLE_CLIENT_ID;
         if (!CLIENT_ID) {
             alert("Introduce tu Client ID en Ajustes.");
             showView('settings');
@@ -247,7 +247,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     if (CLIENT_ID_INPUT) {
-        CLIENT_ID_INPUT.value = localStorage.getItem('gdrive_client_id') || "";
+        const configId = window.APP_CONFIG?.GOOGLE_CLIENT_ID || "";
+        CLIENT_ID_INPUT.value = localStorage.getItem('gdrive_client_id') || configId;
         CLIENT_ID_INPUT.onchange = () => localStorage.setItem('gdrive_client_id', CLIENT_ID_INPUT.value);
     }
 
@@ -353,7 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
     closeStatsBtn.onclick = () => { statsSection.classList.add('hidden'); activityView.classList.remove('hidden'); };
 
     // Init
-    const savedKey = localStorage.getItem('amazfit_auth_key');
+    const savedKey = localStorage.getItem('amazfit_auth_key') || window.APP_CONFIG?.AMAZFIT_AUTH_KEY;
     if (savedKey) {
         authKeyInput.value = savedKey;
         setTimeout(async () => {
