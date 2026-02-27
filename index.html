@@ -11,6 +11,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- Google API para Drive -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
 </head>
 
 <body class="dark-theme">
@@ -80,6 +83,16 @@
                         <span class="label">Esta Semana</span>
                         <h2 id="week-total-dist">0.00 km</h2>
                         <p id="week-total-count">0 activ.</p>
+                    </div>
+                    <div class="stat-card glass">
+                        <span class="label">Récord Dist.</span>
+                        <h2 id="record-dist">0.00 km</h2>
+                        <p id="record-date">--/--/--</p>
+                    </div>
+                    <div class="stat-card glass">
+                        <span class="label">Vel. Media</span>
+                        <h2 id="global-avg-speed">0.0 km/h</h2>
+                        <p id="total-time-hours">0h total</p>
                     </div>
                 </div>
 
