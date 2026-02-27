@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Amazfit Sport Tracker - Custom App</title>
+    <title>Amazfit Ultra Tracker</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
@@ -17,113 +17,110 @@
     <div class="glass-container">
         <header>
             <div class="logo">
-                <span class="icon">⌚</span>
+                <span class="icon">⚡</span>
                 <h1>Amazfit Dashboard</h1>
             </div>
             <div class="connection-status" id="connection-status">
-                <span class="dot"></span> Desconectado
+                <span class="dot"></span> <span>Desconectado</span>
             </div>
         </header>
 
         <main>
             <section id="auth-section" class="card">
                 <h2>1. Configuración</h2>
-                <p>Para conectar tu reloj, necesitas la <strong>Auth Key</strong> de 32 caracteres.</p>
+                <p class="hint">Introduce tu Auth Key de 32 caracteres para vincular el reloj.</p>
                 <div class="input-group">
-                    <input type="password" id="auth-key" placeholder="Pega aquí tu Auth Key (32 hex chars)">
-                    <button id="save-key" class="btn secondary">Guardar Clave</button>
+                    <input type="password" id="auth-key" placeholder="Auth Key (32 hex chars)">
+                    <button id="save-key" class="btn secondary">💾</button>
                 </div>
-                <p class="hint">¿No sabes cómo obtenerla? <a href="#" id="help-link">Ver guía rápida</a></p>
                 <button id="connect-btn" class="btn primary">Conectar Reloj</button>
+                <p class="hint" style="text-align: center;">¿Necesitas ayuda? <a href="auth_key_guide.md">Ver guía</a>
+                </p>
             </section>
 
             <section id="activity-list-section" class="card hidden">
                 <div class="card-header">
-                    <h2>2. Actividades del Reloj</h2>
-                    <button id="refresh-activities" class="btn small">🔄 Actualizar</button>
+                    <h2>Actividades registradas</h2>
+                    <button id="refresh-activities" class="btn small primary">🔄 Sincronizar</button>
                 </div>
+
+                <div id="sync-options" class="hint"
+                    style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="clear-watch-data" style="width: 16px; height: 16px;">
+                    <label for="clear-watch-data">Borrar datos del reloj tras descargar</label>
+                </div>
+
                 <div id="activity-list" class="list-container">
-                    <p class="empty-msg">No hay actividades cargadas.</p>
+                    <p class="empty-msg">No hay actividades. Pulsa sincronizar para descargar datos reales.</p>
                 </div>
             </section>
 
+            <!-- Vista de Estadísticas (Fullscreen Overlay) -->
             <section id="stats-section" class="fullscreen-overlay hidden">
                 <div id="map" class="map-fullscreen"></div>
 
                 <div class="floating-header">
-                    <button id="close-stats" class="btn-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="3" y1="12" x2="21" y2="12"></line>
-                            <line x1="3" y1="6" x2="21" y2="6"></line>
-                            <line x1="3" y1="18" x2="21" y2="18"></line>
-                        </svg>
-                    </button>
-                    <h2>Caminata de hoy</h2>
-                    <button id="download-gpx" class="btn-icon"
-                        style="border:none;background:none;font-size:20px;cursor:pointer;">⬇</button>
+                    <button id="close-stats" class="btn-icon">✕</button>
+                    <h2 id="activity-title">Detalle de Actividad</h2>
+                    <button id="download-gpx" class="btn-icon">💾 GPX</button>
                 </div>
 
                 <div class="floating-stats">
                     <div class="stat-card large-span">
-                        <span class="label">Distancia total:</span>
-                        <span class="value" id="stat-dist">0.0 km</span>
+                        <span class="label">Distancia</span>
+                        <span class="value" id="stat-dist">0.00 km</span>
                     </div>
 
-                    <div class="stats-row">
-                        <div class="stat-card">
-                            <span class="label">Calorías:</span>
-                            <span class="value" id="stat-cal">0 kcal</span>
-                        </div>
-                        <div class="stat-card">
-                            <span class="label">Duración:</span>
-                            <span class="value" id="stat-time">00:00:00</span>
-                        </div>
+                    <div class="stat-card">
+                        <span class="label">Duración</span>
+                        <span class="value" id="stat-time">00:00:00</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="label">Ritmo</span>
+                        <span class="value" id="stat-pace">--:-- min/km</span>
                     </div>
 
-                    <div class="stats-row">
-                        <div class="stat-card">
-                            <span class="label">Ritmo medio:</span>
-                            <span class="value" id="stat-pace">-- min/km</span>
-                        </div>
-                        <div class="stat-card">
-                            <span class="label">Pulsaciones:</span>
-                            <span class="value" id="stat-hr">-- bpm</span>
-                        </div>
+                    <div class="stat-card">
+                        <span class="label">Corazón</span>
+                        <span class="value" id="stat-hr">-- bpm</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="label">Calorías</span>
+                        <span class="value" id="stat-cal">-- kcal</span>
                     </div>
                 </div>
             </section>
 
             <section id="log-section" class="card">
                 <div class="card-header">
-                    <h2>Consola de Depuración</h2>
+                    <h2>Consola Técnica</h2>
                     <div class="header-actions">
-                        <button id="copy-log" class="btn small secondary">Copiar Log</button>
+                        <button id="copy-log" class="btn small secondary">Copiar</button>
                         <button id="clear-logs" class="btn small secondary">Limpiar</button>
                     </div>
                 </div>
                 <div id="log-console" class="console">
-                    <div class="log-entry system">Sistema listo. Esperando conexión...</div>
+                    <div class="log-entry system">Listo para la acción. v1.4.0</div>
                 </div>
             </section>
         </main>
-
     </div>
 
+    <!-- Modals / Overlays -->
     <div id="loading-overlay" class="overlay" style="display: none;">
         <div class="spinner"></div>
-        <p id="loading-text">Sincronizando...</p>
+        <p id="loading-text">Sincronizando reloj...</p>
+        <p id="loading-subtext" style="font-size: 12px; color: #94a3b8; margin-top: 10px;"></p>
         <button id="cancel-loading" class="btn small secondary" style="margin-top: 20px;">Cancelar</button>
     </div>
 
-    <!-- Scripts -->
+    <!-- Libs -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <!-- Carga de scripts con cache buster dinámico v1.3.36 -->
-    <script src="parser.js?v=1.3.36"></script>
-    <script src="ble.js?v=1.3.36"></script>
-    <script src="map.js?v=1.3.36"></script>
-    <script src="app.js?v=1.3.36"></script>
+    <script src="parser.js?v=1.4.0"></script>
+    <script src="ble.js?v=1.4.0"></script>
+    <script src="map.js?v=1.4.0"></script>
+    <script src="app.js?v=1.4.0"></script>
 </body>
 
 </html>

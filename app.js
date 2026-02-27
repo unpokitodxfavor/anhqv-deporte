@@ -191,15 +191,28 @@ document.addEventListener('DOMContentLoaded', () => {
             hideLoading();
             log(`Descarga finalizada: ${fullBuffer.byteLength} bytes.`, "system");
 
-            const parsedData = ActivityParser.parse(fullBuffer.buffer);
-            if (parsedData.isRealData) {
-                renderRealActivityProgress(parsedData);
+            // v1.4.1: Intentar parsear múltiples actividades
+            const activities = ActivityParser.parseMultiple(fullBuffer.buffer);
+            log(`Se han detectado ${activities.length} actividades en el buffer.`, "system");
+
+            let lastTimestamp = 0;
+            activities.forEach((act, index) => {
+                if (act && act.isRealData && act.points.length > 0) {
+                    renderRealActivity(act, index + 1);
+                    if (act.timestamp > lastTimestamp) lastTimestamp = act.timestamp;
+                }
+            });
+
+            if (lastTimestamp > 0) {
+                // Guardar para la próxima sincronización incremental
+                localStorage.setItem('last_sync_timestamp', lastTimestamp.toString());
+                log(`Marca de sincronización actualizada: ${new Date(lastTimestamp).toLocaleString()}`, "system");
             }
         }
     });
 
-    function renderRealActivityProgress(data) {
-        log("Renderizando actividad real en la lista...", "system");
+    function renderRealActivity(data, index) {
+        log(`Renderizando actividad #${index}...`, "system");
 
         // Limpiar el mensaje de "No hay actividades"
         const emptyMsg = activityList.querySelector('.empty-msg');
@@ -207,10 +220,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const item = document.createElement('div');
         item.className = 'activity-item real-sync';
+
+        const dateStr = new Date(data.timestamp).toLocaleString([], {
+            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+        });
+
         item.innerHTML = `
             <div class="activity-info">
-                <h4>Actividad Sincronizada</h4>
-                <span>${new Date().toLocaleTimeString()} • ${data.stats.distance} km</span>
+                <h4>Actividad ${dateStr}</h4>
+                <span>${data.stats.distance} km • ${data.stats.duration}</span>
             </div>
             <span class="arrow">→</span>
         `;
@@ -222,6 +240,9 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('stat-hr').innerText = data.stats.avgHeartRate + ' bpm';
             const paceEl = document.getElementById('stat-pace');
             if (paceEl) paceEl.innerText = (data.stats.pace || "--:--") + ' min/km';
+
+            const titleEl = document.getElementById('activity-title');
+            if (titleEl) titleEl.innerText = `Actividad: ${dateStr}`;
 
             activitySection.classList.add('hidden');
             statsSection.classList.remove('hidden');
@@ -249,17 +270,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `amazfit_rutas_${new Date().toISOString().replace(/[:.]/g, '-')}.gpx`;
+                    a.download = `amazfit_${data.timestamp}.gpx`;
                     a.click();
                     URL.revokeObjectURL(url);
-                    log("GPX exportado correctamente.", "system");
+                    log("GPX exportado.", "system");
                 };
             }
         };
 
         // Insertar al principio de la lista
         activityList.insertBefore(item, activityList.firstChild);
-        log("¡Actividad real añadida con éxito!", "system");
     }
 
     closeStatsBtn.addEventListener('click', () => {

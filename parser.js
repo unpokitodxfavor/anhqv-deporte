@@ -208,7 +208,69 @@ class ActivityParser {
                 calories: Math.floor(totalDistance * 60) || "--",
                 avgHeartRate: hrCount > 0 ? Math.floor(hrSum / hrCount) : "--"
             },
-            isRealData: true
+            isRealData: true,
+            timestamp: firstPointTime ? firstPointTime.getTime() : Date.now()
+        };
+    }
+
+    /**
+     * Intenta dividir el buffer en múltiples actividades si hay huecos temporales grandes
+     */
+    static parseMultiple(buffer) {
+        const fullData = this.parseZeppOsFormat(buffer);
+        if (!fullData.points || fullData.points.length === 0) return [fullData];
+
+        const activities = [];
+        let currentPoints = [];
+        const GAP_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutos de hueco = nueva actividad
+
+        for (let i = 0; i < fullData.points.length; i++) {
+            const p = fullData.points[i];
+            if (currentPoints.length > 0) {
+                const prev = currentPoints[currentPoints.length - 1];
+                if (p.time - prev.time > GAP_THRESHOLD_MS) {
+                    // Split!
+                    activities.push(this._packageActivity(currentPoints));
+                    currentPoints = [];
+                }
+            }
+            currentPoints.push(p);
+        }
+
+        if (currentPoints.length > 0) {
+            activities.push(this._packageActivity(currentPoints));
+        }
+
+        return activities;
+    }
+
+    static _packageActivity(points) {
+        if (points.length === 0) return null;
+
+        // Recalcular stats para este sub-bloque
+        let dist = 0;
+        let hrSum = 0;
+        let hrCount = 0;
+        for (let i = 1; i < points.length; i++) {
+            dist += this._calcDistance(points[i - 1].lat, points[i - 1].lng, points[i].lat, points[i].lng);
+            if (points[i].hr > 0) { hrSum += points[i].hr; hrCount++; }
+        }
+
+        const durationSecs = Math.floor((points[points.length - 1].time - points[0].time) / 1000);
+        const hrs = Math.floor(durationSecs / 3600);
+        const mins = Math.floor((durationSecs % 3600) / 60);
+        const secs = durationSecs % 60;
+
+        return {
+            points: points,
+            stats: {
+                distance: dist.toFixed(2),
+                duration: `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`,
+                calories: Math.floor(dist * 60),
+                avgHeartRate: hrCount > 0 ? Math.floor(hrSum / hrCount) : "--"
+            },
+            isRealData: true,
+            timestamp: points[0].time.getTime()
         };
     }
 

@@ -317,7 +317,20 @@ class AmazfitDevice {
 
     async fetchActivities() {
         if (!this.authenticated) throw new Error("No autenticado");
-        this.log("Solicitando lista de actividades reales...", "system");
+
+        // v1.4.0: Leer preferencia de borrado
+        const clearWatch = document.getElementById('clear-watch-data')?.checked || false;
+        this.shouldClearAfterSync = clearWatch;
+
+        // v1.4.1: Sincronización Incremental
+        const lastSync = localStorage.getItem('last_sync_timestamp');
+        let sinceDate = new Date(2020, 0, 1); // Default
+        if (lastSync) {
+            sinceDate = new Date(parseInt(lastSync));
+            this.log(`Sincronización incremental desde: ${sinceDate.toLocaleString()}`, "system");
+        }
+
+        this.log(`Solicitando actividades (${clearWatch ? 'BORRAR' : 'MANTENER'} tras sync)...`, "system");
 
         // Limpiar acumuladores y contadores
         this.activityBuffer = new Uint8Array(0);
@@ -373,10 +386,21 @@ class AmazfitDevice {
 
             // Fase 1: Descarga Directa
             this.log("Fase 1: Descarga Directa (SPORTS_DETAILS - 0x06)...", "ble");
-            // v1.3.34: Fetch SPORTS_DETAILS (0x06) en lugar de ACTIVITY_HISTORY (0x01)
-            // 0x01 es History (Steps, Sleep, HR por minutos). 0x06 es los tracks de GPS reales.
-            // Para obtener la última actividad o todas desde una fecha. Usamos 2020-01-01 (0xE4 0x07 01 01)
-            const directFetch = new Uint8Array([0x01, 0x06, 0xE4, 0x07, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]);
+
+            const year = sinceDate.getFullYear();
+            const month = sinceDate.getMonth() + 1;
+            const day = sinceDate.getDate();
+            const hour = sinceDate.getHours();
+            const minute = sinceDate.getMinutes();
+            const second = sinceDate.getSeconds();
+
+            const directFetch = new Uint8Array([
+                0x01, 0x06,
+                year & 0xFF, (year >> 8) & 0xFF,
+                month, day, hour, minute, second, 0x00
+            ]);
+
+            this.log(`Comando: 01 06 ${year}-${month}-${day} ${hour}:${minute}:${second}`, "ble");
             await this._safeWrite(directFetch, "DIRECT_FETCH", 20, this.fetchControlChar);
 
             // Espera activa v1.3.13: 10s para ver si Fase 1 arranca el flujo
@@ -463,10 +487,13 @@ class AmazfitDevice {
 
             if (cmdReply === 0x02) {
                 if (status === 0x01) {
-                    this.log("Fin de transmisión de datos detectado (10 02 01). Enviando ACK final...", "system");
+                    this.log("Fin de transmisión de datos detectado (10 02 01).", "system");
                     // Zepp OS ACK: [0x03, 0x09] (Mantener en reloj) o [0x03, 0x01] (Borrar del reloj)
+                    const ackByte = this.shouldClearAfterSync ? 0x01 : 0x09;
+                    this.log(`Enviando ACK ${ackByte === 0x01 ? 'BORRAR (01)' : 'MANTENER (09)'}...`, "ble");
+
                     setTimeout(() => {
-                        this._safeWrite(new Uint8Array([0x03, 0x09]), "ACK_FINAL_ZEPP", 5, this.fetchControlChar);
+                        this._safeWrite(new Uint8Array([0x03, ackByte]), "ACK_FINAL_ZEPP", 5, this.fetchControlChar);
                         this._finalizeSync();
                     }, 500);
                 } else {
