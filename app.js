@@ -249,6 +249,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (CLIENT_ID_INPUT) {
         const configId = window.APP_CONFIG?.GOOGLE_CLIENT_ID || "";
         CLIENT_ID_INPUT.value = localStorage.getItem('gdrive_client_id') || configId;
+
+        document.getElementById('save-gdrive-id')?.addEventListener('click', () => {
+            localStorage.setItem('gdrive_client_id', CLIENT_ID_INPUT.value);
+            log("Client ID de Google guardado.", "system");
+            alert("Google Client ID guardado correctamente.");
+        });
+
         CLIENT_ID_INPUT.onchange = () => localStorage.setItem('gdrive_client_id', CLIENT_ID_INPUT.value);
     }
 
