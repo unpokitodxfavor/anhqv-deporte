@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navStats = document.getElementById('nav-stats');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.5.4";
+    const APP_VERSION = "v1.5.5";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -408,10 +408,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.addEventListener('amazfit-data', (event) => {
-        const { fullBuffer, complete } = event.detail;
+        const { fullBuffer, complete, startTime } = event.detail;
         if (complete) {
             hideLoading();
-            const activities = ActivityParser.parseMultiple(fullBuffer.buffer);
+            const activities = ActivityParser.parseMultiple(fullBuffer.buffer, startTime);
             let lastTS = 0;
             activities.forEach((act, i) => {
                 if (act?.isRealData) {

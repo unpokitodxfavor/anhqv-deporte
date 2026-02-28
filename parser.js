@@ -7,7 +7,7 @@ class ActivityParser {
      * Parse binary activity stream
      * @param {ArrayBuffer} buffer 
      */
-    static parse(buffer) {
+    static parse(buffer, baseTimestamp) {
         const view = new DataView(buffer);
         const data = {
             points: [],
@@ -31,7 +31,7 @@ class ActivityParser {
         // Si el buffer es real (tiene datos), decodificamos el formato Zepp OS (Type-Length-Value LSB)
         if (buffer.byteLength > 0) {
             try {
-                return this.parseZeppOsFormat(buffer);
+                return this.parseZeppOsFormat(buffer, baseTimestamp);
             } catch (e) {
                 console.error("Error al parsear datos Zepp OS:", e);
                 // Fallback visual si falla
@@ -43,7 +43,8 @@ class ActivityParser {
                         calories: "--",
                         avgHeartRate: "--"
                     },
-                    isRealData: true
+                    isRealData: true,
+                    timestamp: baseTimestamp || Date.now()
                 };
             }
         }
@@ -51,7 +52,7 @@ class ActivityParser {
         return this.generateMockRoute();
     }
 
-    static parseZeppOsFormat(buffer) {
+    static parseZeppOsFormat(buffer, baseTimestamp) {
         // En Bip U Pro (Huami RTOS), el buffer ya viene sin el sequence byte (MTU header) 
         // gracias a la limpieza en ble.js.
         // Son bloques continuos de 8 bytes (Type, TimeOffset, 6 bytes payload)
@@ -66,7 +67,7 @@ class ActivityParser {
         window.dispatchEvent(new CustomEvent('app-log', { detail: { message: "Raw Data (Hex): " + hexDump, type: 'system' } }));
         console.log("Trace Hex Dump RTOS:", hexDump);
 
-        let currentTimestamp = new Date(); // La hora la asume como ahora al mostrar
+        let currentTimestamp = baseTimestamp ? new Date(baseTimestamp) : new Date(); // La hora la asume de la DB o ahora
         let totalTimeSecs = 0;
         let lastTimeOffset = 0;
 
@@ -216,8 +217,8 @@ class ActivityParser {
     /**
      * Intenta dividir el buffer en múltiples actividades si hay huecos temporales grandes
      */
-    static parseMultiple(buffer) {
-        const fullData = this.parseZeppOsFormat(buffer);
+    static parseMultiple(buffer, baseTimestamp) {
+        const fullData = this.parseZeppOsFormat(buffer, baseTimestamp);
         if (!fullData.points || fullData.points.length === 0) return [fullData];
 
         const activities = [];

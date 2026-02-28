@@ -457,9 +457,28 @@ class AmazfitDevice {
 
             if (cmdReply === 0x01 && status === 0x01) {
                 if (data.length >= 7) {
-                    // Start date response success (length 15 or 16)
+                    // Start date response success
                     const expectedBytes = data[3] | (data[4] << 8) | (data[5] << 16) | (data[6] << 24);
-                    this.log(`Handshake Fetch OK (10 01 01). Esperando ${expectedBytes} paquetes.`, "system");
+                    this.log(`Handshake Fetch OK (10 01 01). Esperando ${expectedBytes} bytes.`, "system");
+
+                    if (data.length >= 14) {
+                        try {
+                            const year = data[7] | (data[8] << 8);
+                            const month = data[9] - 1; // JS meses son 0-11
+                            const day = data[10];
+                            const hour = data[11];
+                            const minute = data[12];
+                            const second = data[13];
+                            const startDate = new Date(year, month, day, hour, minute, second);
+                            if (!isNaN(startDate.getTime())) {
+                                this.streamStartTime = startDate.getTime();
+                                this.log(`Fecha de inicio detectada: ${startDate.toLocaleString()}`, "system");
+                            }
+                        } catch (e) {
+                            this.log("Error al decodificar fecha de inicio.", "ble");
+                        }
+                    }
+
                     if (expectedBytes === 0) {
                         this.log("No hay datos nuevos para sincronizar.", "system");
                         this._finalizeSync();
@@ -568,7 +587,8 @@ class AmazfitDevice {
         window.dispatchEvent(new CustomEvent('amazfit-data', {
             detail: {
                 fullBuffer: this.activityBuffer,
-                complete: true
+                complete: true,
+                startTime: this.streamStartTime || null
             }
         }));
     }
