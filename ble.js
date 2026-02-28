@@ -326,8 +326,9 @@ class AmazfitDevice {
         const lastSync = localStorage.getItem('last_sync_timestamp');
         let sinceDate = new Date(2020, 0, 1); // Default
         if (lastSync) {
-            sinceDate = new Date(parseInt(lastSync));
-            this.log(`Sincronización incremental desde: ${sinceDate.toLocaleString()}`, "system");
+            // Restar 1 hora por seguridad (evitar missing activities por desajuste de reloj)
+            sinceDate = new Date(parseInt(lastSync) - (60 * 60 * 1000));
+            this.log(`Sincronización incremental desde: ${sinceDate.toLocaleString()} (incluyendo 1h de margen)`, "system");
         }
 
         this.log(`Solicitando actividades (${clearWatch ? 'BORRAR' : 'MANTENER'} tras sync)...`, "system");

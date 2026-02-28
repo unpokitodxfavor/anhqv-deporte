@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navStats = document.getElementById('nav-stats');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.5.7";
+    const APP_VERSION = "v1.5.8";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -87,7 +87,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let allActivities = [];
     try {
         const stored = localStorage.getItem('amazfit_db');
-        if (stored) allActivities = JSON.parse(stored);
+        if (stored) {
+            allActivities = JSON.parse(stored);
+            // Renderizar las últimas 5 actividades en la lista principal al cargar
+            const recent = [...allActivities].sort((a, b) => b.timestamp - a.timestamp).slice(0, 5);
+            recent.forEach(act => renderRealActivity(act, 0, true));
+        }
     } catch (e) { console.error("Error loading DB", e); }
 
     function deleteFromDb(timestamp) {
@@ -410,11 +415,13 @@ document.addEventListener('DOMContentLoaded', () => {
     clearLogsBtn?.addEventListener('click', () => logConsole.innerHTML = `<div class="log-entry system">Consola limpia v${APP_VERSION}</div>`);
 
     document.getElementById('delete-local-history')?.addEventListener('click', () => {
-        if (confirm("¿Borrar todo el historial?")) {
+        if (confirm("¿Borrar todo el historial historial y reiniciar sincronización?")) {
             localStorage.removeItem('amazfit_db');
+            localStorage.removeItem('last_sync_timestamp');
             allActivities = [];
+            activityList.innerHTML = '<p class="empty-msg">No hay actividades. Pulsa sincronizar para descargar datos reales.</p>';
             updateGlobalStats();
-            log("Historial local borrado.", "system");
+            log("Historial y marca de sincronización borrados.", "system");
         }
     });
 
@@ -436,6 +443,19 @@ document.addEventListener('DOMContentLoaded', () => {
     saveKeyBtn.addEventListener('click', () => {
         localStorage.setItem('amazfit_auth_key', authKeyInput.value);
         log("Auth Key guardada.", "system");
+    });
+
+    document.getElementById('force-full-sync')?.addEventListener('click', async () => {
+        if (!confirm("Esto ignorará la marca de última sincronización y pedirá todos los datos al reloj (desde 2020). ¿Continuar?")) return;
+        localStorage.removeItem('last_sync_timestamp');
+        showLoading("Forzando Sincronización Completa...");
+        try { await window.amazfit.fetchActivities(); }
+        catch (err) { log(`Error: ${err.message}`, "error"); hideLoading(); }
+    });
+
+    document.getElementById('force-full-sync-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.getElementById('force-full-sync')?.click();
     });
 
     refreshBtn.addEventListener('click', async () => {
@@ -460,18 +480,30 @@ document.addEventListener('DOMContentLoaded', () => {
             if (lastTS) localStorage.setItem('last_sync_timestamp', lastTS.toString());
             if (activities.length === 0) {
                 log("Sincronización finalizada: No se encontraron actividades nuevas.", "system");
+            } else {
+                // Si había mensaje de "No hay actividades", lo quitamos
+                const empty = activityList.querySelector('.empty-msg');
+                if (empty) empty.remove();
             }
         }
     });
 
-    function renderRealActivity(data, index) {
+    function renderRealActivity(data, index, isFromHistory = false) {
+        if (!data || !data.stats) return;
+
+        // Evitar duplicados en el DOM si ya está (por timestamp)
+        if (!isFromHistory && document.querySelector(`[data-ts="${data.timestamp}"]`)) return;
+
         const item = document.createElement('div');
         item.className = 'activity-item real-sync';
+        if (isFromHistory) item.classList.add('history-item');
+        item.setAttribute('data-ts', data.timestamp);
+
         const dateStr = new Date(data.timestamp).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
         item.innerHTML = `
             <div class="activity-info">
-                <h4>Actividad ${dateStr}</h4>
-                <span>${data.stats.distance} km • ${data.stats.duration}</span>
+                <h4>Actividad ${dateStr} ${isFromHistory ? '<small>(Guardada)</small>' : ''}</h4>
+                <span>${data.stats.distance} km • ${data.stats.duration || '--:--'}</span>
             </div>
             <div style="display: flex; align-items: center; gap: 5px;">
                 <button class="btn-delete" title="Borrar">🗑️</button>

@@ -14,7 +14,7 @@
     <!-- Google API para Drive -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js" async defer></script>
-    <script src="config.js?v=1.5.5"></script>
+    <script src="config.js?v=1.5.8"></script>
 </head>
 
 <body class="dark-theme">
@@ -56,9 +56,17 @@
                     </div>
 
                     <div id="sync-options" class="hint"
-                        style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
-                        <input type="checkbox" id="clear-watch-data" style="width: 16px; height: 16px;">
-                        <label for="clear-watch-data">Borrar datos del reloj tras descargar</label>
+                        style="margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="clear-watch-data" style="width: 16px; height: 16px;">
+                            <label for="clear-watch-data" style="cursor: pointer;">Borrar datos del reloj tras
+                                descargar</label>
+                        </div>
+                        <p class="hint" style="margin-top: 5px; font-size: 11px;">
+                            Si una actividad no aparece, prueba el <a href="#" id="force-full-sync-link"
+                                style="text-decoration: underline; color: var(--secondary);">Modo Sincronización
+                                Completa</a>.
+                        </p>
                     </div>
 
                     <div id="activity-list" class="list-container">
@@ -137,6 +145,8 @@
 
                 <div class="card glass" style="margin-top: 20px;">
                     <h3>Mantenimiento</h3>
+                    <button id="force-full-sync" class="btn secondary full-width" style="margin-bottom: 10px;">Forzar
+                        Sincronización Completa</button>
                     <button id="delete-local-history" class="btn danger full-width">🗑️ Borrar Historial Local</button>
                     <p class="hint" style="margin-top: 10px;">Esto borrará las estadísticas acumuladas pero no los
                         archivos descargados.</p>
@@ -189,7 +199,7 @@
                     </div>
                 </div>
                 <div id="log-console" class="console">
-                    <div class="log-entry system">Listo para la acción. v1.5.7</div>
+                    <div class="log-entry system">Listo para la acción. v1.5.8</div>
                 </div>
             </section>
         </main>
@@ -206,10 +216,10 @@
     <!-- Libs -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script src="parser.js?v=1.5.7"></script>
-    <script src="ble.js?v=1.5.7"></script>
-    <script src="map.js?v=1.5.7"></script>
-    <script src="app.js?v=1.5.7"></script>
+    <script src="parser.js?v=1.5.8"></script>
+    <script src="ble.js?v=1.5.8"></script>
+    <script src="map.js?v=1.5.8"></script>
+    <script src="app.js?v=1.5.8"></script>
 </body>
 
 </html>
