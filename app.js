@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navStats = document.getElementById('nav-stats');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.5.3";
+    const APP_VERSION = "v1.5.4";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -89,6 +89,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const stored = localStorage.getItem('amazfit_db');
         if (stored) allActivities = JSON.parse(stored);
     } catch (e) { console.error("Error loading DB", e); }
+
+    function deleteFromDb(timestamp) {
+        if (!confirm("¿Borrar esta actividad del historial?")) return;
+        allActivities = allActivities.filter(a => a.timestamp !== timestamp);
+        localStorage.setItem('amazfit_db', JSON.stringify(allActivities));
+        updateGlobalStats();
+        // Intentar refrescar la vista actual si es breakdown
+        const titleEl = document.getElementById('breakdown-title');
+        if (!breakdownSection.classList.contains('hidden') && titleEl) {
+            const currentTitle = titleEl.innerText;
+            // Si estamos viendo un desglose, lo refrescamos con los datos filtrados
+            // Esto es un poco rudimentario pero funcionará para la mayoría de casos
+            const statsListEl = document.getElementById('stats-summary-list');
+            updateGlobalStats(); // Ya lo llamamos arriba
+            // Si era un mes, lo buscamos de nuevo
+            const filtered = allActivities.filter(act => {
+                // ... lógica para re-filtrar según el título ...
+                // Para simplificar, si borras algo, cerramos el breakdown para que veas el total actualizado
+                showView('stats');
+            });
+        }
+        log("Actividad borrada del historial.", "system");
+    }
 
     function saveToDb(activity) {
         if (!allActivities.find(a => a.timestamp === activity.timestamp)) {
@@ -245,7 +268,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             <h4>Actividad ${dateStr}</h4>
                             <span>${act.stats.distance} km • ${act.stats.duration || '--:--'}</span>
                         </div>
+                        <button class="btn-delete" title="Borrar">🗑️</button>
                     `;
+                    const delBtn = item.querySelector('.btn-delete');
+                    delBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        deleteFromDb(act.timestamp);
+                    };
                     breakdownList.appendChild(item);
                 });
             }
@@ -399,7 +428,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const item = document.createElement('div');
         item.className = 'activity-item real-sync';
         const dateStr = new Date(data.timestamp).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-        item.innerHTML = `<div class="activity-info"><h4>Actividad ${dateStr}</h4><span>${data.stats.distance} km • ${data.stats.duration}</span></div><span class="arrow">→</span>`;
+        item.innerHTML = `
+            <div class="activity-info">
+                <h4>Actividad ${dateStr}</h4>
+                <span>${data.stats.distance} km • ${data.stats.duration}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <button class="btn-delete" title="Borrar">🗑️</button>
+                <span class="arrow">→</span>
+            </div>
+        `;
+
+        const delBtn = item.querySelector('.btn-delete');
+        delBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (confirm("¿Borrar esta actividad de la lista?")) {
+                item.remove();
+                // También borrar de la DB si existe
+                allActivities = allActivities.filter(a => a.timestamp !== data.timestamp);
+                localStorage.setItem('amazfit_db', JSON.stringify(allActivities));
+                updateGlobalStats();
+            }
+        };
         item.onclick = () => {
             document.getElementById('stat-dist').innerText = data.stats.distance + ' km';
             document.getElementById('stat-time').innerText = data.stats.duration;

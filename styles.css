@@ -280,6 +280,27 @@ input:focus {
     font-size: 20px;
 }
 
+.btn-delete {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 18px;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    border-radius: 8px;
+    margin-left: 10px;
+    z-index: 10;
+}
+
+.btn-delete:hover {
+    color: var(--accent-red);
+    background: rgba(244, 63, 94, 0.1);
+}
+
 .empty-msg {
     text-align: center;
     color: var(--text-dim);
