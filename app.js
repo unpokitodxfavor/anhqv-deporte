@@ -25,12 +25,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const statsDashboard = document.getElementById('stats-dashboard-section');
     const settingsSection = document.getElementById('settings-section');
     const statsSection = document.getElementById('stats-section');
+    const breakdownSection = document.getElementById('breakdown-section');
+    const breakdownList = document.getElementById('breakdown-list');
+    const closeBreakdownBtn = document.getElementById('close-breakdown');
 
     const navActivities = document.getElementById('nav-activities');
     const navStats = document.getElementById('nav-stats');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.5.0";
+    const APP_VERSION = "v1.5.3";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -53,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Navigation Logic
     function showView(viewId) {
-        [activityView, statsDashboard, settingsSection].forEach(v => {
+        [activityView, statsDashboard, settingsSection, breakdownSection].forEach(v => {
             if (v) v.classList.add('hidden');
         });
         [navActivities, navStats, navSettings].forEach(n => {
@@ -70,6 +73,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (viewId === 'settings') {
             settingsSection?.classList.remove('hidden');
             navSettings?.classList.add('active');
+        } else if (viewId === 'breakdown') {
+            breakdownSection?.classList.remove('hidden');
+            navStats?.classList.add('active');
         }
     }
 
@@ -177,17 +183,77 @@ document.addEventListener('DOMContentLoaded', () => {
             Object.keys(groups).forEach(key => {
                 const item = document.createElement('div');
                 item.className = 'activity-item';
-                item.style.cursor = 'default';
+                item.style.cursor = 'pointer';
                 item.innerHTML = `
                     <div class="activity-info">
                         <h4 style="text-transform: capitalize;">${key}</h4>
                         <span>${groups[key].dist.toFixed(2)} km • ${groups[key].count} sesiones</span>
                     </div>
+                    <span class="arrow">→</span>
                 `;
+                item.onclick = () => {
+                    const monthActivities = allActivities.filter(act => {
+                        const actDate = new Date(act.timestamp);
+                        return actDate.toLocaleString('es-ES', { month: 'long', year: 'numeric' }) === key;
+                    });
+                    showActivitiesBreakdown(monthActivities, key);
+                };
                 statsListEl.appendChild(item);
             });
         }
+
+        // Setup clicks for general cards
+        const cards = [
+            { id: 'global-total-dist', title: 'Historial Completo', filter: () => true },
+            { id: 'month-total-dist', title: 'Este Mes', filter: (act) => new Date(act.timestamp) >= startOfMonth },
+            { id: 'week-total-dist', title: 'Esta Semana', filter: (act) => new Date(act.timestamp) >= startOfWeek },
+            { id: 'record-dist', title: 'Récord de Distancia', filter: (act) => parseFloat(act.stats.distance) === maxDist }
+        ];
+
+        cards.forEach(card => {
+            const el = document.getElementById(card.id);
+            if (el) {
+                const parent = el.closest('.stat-card');
+                if (parent) {
+                    parent.style.cursor = 'pointer';
+                    parent.onclick = () => {
+                        const filtered = allActivities.filter(card.filter);
+                        showActivitiesBreakdown(filtered, card.title);
+                    };
+                }
+            }
+        });
     }
+
+    function showActivitiesBreakdown(activities, title) {
+        const titleEl = document.getElementById('breakdown-title');
+        if (titleEl) titleEl.innerText = title;
+
+        if (breakdownList) {
+            breakdownList.innerHTML = '';
+            if (activities.length === 0) {
+                breakdownList.innerHTML = '<p class="empty-msg">No hay actividades en este periodo.</p>';
+            } else {
+                // Ordenar por fecha descendente
+                [...activities].sort((a, b) => b.timestamp - a.timestamp).forEach(act => {
+                    const item = document.createElement('div');
+                    item.className = 'activity-item';
+                    item.style.cursor = 'default';
+                    const dateStr = new Date(act.timestamp).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+                    item.innerHTML = `
+                        <div class="activity-info">
+                            <h4>Actividad ${dateStr}</h4>
+                            <span>${act.stats.distance} km • ${act.stats.duration || '--:--'}</span>
+                        </div>
+                    `;
+                    breakdownList.appendChild(item);
+                });
+            }
+        }
+        showView('breakdown');
+    }
+
+    if (closeBreakdownBtn) closeBreakdownBtn.onclick = () => showView('stats');
 
     // --- Google Drive Integration ---
     let tokenClient;
