@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navStats = document.getElementById('nav-stats');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.5.5";
+    const APP_VERSION = "v1.5.6";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -310,23 +310,59 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function uploadToDrive(jsonContent) {
+    async function getOrCreateFolder(name) {
+        if (!accessToken) if (!(await initGoogleDrive())) return null;
+        try {
+            // Search if folder exists (within app scope)
+            const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+            const searchRes = await fetch(searchUrl, {
+                headers: { Authorization: 'Bearer ' + accessToken }
+            });
+            const searchData = await searchRes.json();
+            if (searchData.files && searchData.files.length > 0) {
+                return searchData.files[0].id;
+            }
+
+            // Create if not found
+            const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+                method: 'POST',
+                headers: {
+                    Authorization: 'Bearer ' + accessToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    mimeType: 'application/vnd.google-apps.folder'
+                })
+            });
+            const folder = await createRes.json();
+            return folder.id;
+        } catch (e) {
+            log("Error al buscar/crear carpeta: " + e.message, "error");
+            return null;
+        }
+    }
+
+    async function uploadToDrive(fileName, content, mimeType = 'application/json') {
         if (!accessToken) if (!(await initGoogleDrive())) return;
         showLoading("Subiendo a Google Drive...");
         try {
-            const fileName = `amazfit_backup_${new Date().toISOString().split('T')[0]}.json`;
-            const metadata = { name: fileName, mimeType: 'application/json' };
+            const folderId = await getOrCreateFolder('amazfit');
+            const metadata = { name: fileName, mimeType: mimeType };
+            if (folderId) metadata.parents = [folderId];
+
             const form = new FormData();
             form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-            form.append('file', new Blob([jsonContent], { type: 'application/json' }));
+            form.append('file', new Blob([content], { type: mimeType }));
+
             const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
                 method: 'POST',
                 headers: { Authorization: 'Bearer ' + accessToken },
                 body: form
             });
             if (response.ok) {
-                log("¡Copia de seguridad en Drive!", "system");
-                alert("Guardado en Google Drive.");
+                log(`¡Fichero '${fileName}' guardado en Drive (carpeta amazfit)!`, "system");
+                alert(`Guardado en Google Drive: ${fileName}`);
             } else {
                 const err = await response.json();
                 log("Error al subir: " + (err.error?.message || "Desconocido"), "error");
@@ -338,7 +374,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('export-gdrive')?.addEventListener('click', () => {
         if (allActivities.length === 0) { alert("No hay datos."); return; }
-        uploadToDrive(JSON.stringify(allActivities, null, 2));
+        const fileName = `amazfit_backup_${new Date().toISOString().split('T')[0]}.json`;
+        uploadToDrive(fileName, JSON.stringify(allActivities, null, 2));
     });
 
     if (CLIENT_ID_INPUT) {
@@ -461,14 +498,20 @@ document.addEventListener('DOMContentLoaded', () => {
             statsSection.classList.remove('hidden');
             window.sportMap.init();
             window.sportMap.renderRoute(data.points);
+            const filename = `amazfit_${data.timestamp}.gpx`;
             const gpxBtn = document.getElementById('download-gpx');
             if (gpxBtn) gpxBtn.onclick = () => {
                 const gpxStr = ActivityParser.exportToGPX(data);
                 const blob = new Blob([gpxStr], { type: "application/gpx+xml" });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = url; a.download = `amazfit_${data.timestamp}.gpx`; a.click();
+                a.href = url; a.download = filename; a.click();
                 URL.revokeObjectURL(url);
+            };
+            const gdriveBtn = document.getElementById('upload-gdrive-gpx');
+            if (gdriveBtn) gdriveBtn.onclick = () => {
+                const gpxStr = ActivityParser.exportToGPX(data);
+                uploadToDrive(filename, gpxStr, "application/gpx+xml");
             };
         };
         activityList.insertBefore(item, activityList.firstChild);
