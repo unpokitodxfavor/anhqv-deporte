@@ -200,6 +200,8 @@ class ActivityParser {
             paceStr = `${pMins}:${pSecs.toString().padStart(2, '0')}`;
         }
 
+        const pointsFound = mapPoints.length > 0 || points.length > 0;
+
         return {
             points: mapPoints.length > 0 ? mapPoints : points,
             stats: {
@@ -209,7 +211,7 @@ class ActivityParser {
                 calories: Math.floor(totalDistance * 60) || "--",
                 avgHeartRate: hrCount > 0 ? Math.floor(hrSum / hrCount) : "--"
             },
-            isRealData: true,
+            isRealData: pointsFound,
             timestamp: firstPointTime ? firstPointTime.getTime() : Date.now()
         };
     }
@@ -219,7 +221,7 @@ class ActivityParser {
      */
     static parseMultiple(buffer, baseTimestamp) {
         const fullData = this.parseZeppOsFormat(buffer, baseTimestamp);
-        if (!fullData.points || fullData.points.length === 0) return [fullData];
+        if (!fullData.isRealData || (!fullData.points || fullData.points.length === 0)) return [];
 
         const activities = [];
         let currentPoints = [];
