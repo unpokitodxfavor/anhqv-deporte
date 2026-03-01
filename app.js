@@ -1,7 +1,7 @@
 /**
  * app.js - Main Application Logic
  */
-console.log("==> Cargando app.js (v1.5.9) <==");
+console.log("==> Cargando app.js (v1.6.0) <==");
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM Cargado. Iniciando app logic...");
@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navLog = document.getElementById('nav-log');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.5.9";
+    const APP_VERSION = "v1.6.0";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -614,5 +614,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.onerror = (m, u, l) => log(`Error JS: ${m} (línea ${l})`, 'error');
+    // Init UI version display
+    document.querySelectorAll('#version-display, #header-version').forEach(el => {
+        el.innerText = APP_VERSION;
+    });
+
     log(`Iniciando App v${APP_VERSION}...`, 'system');
 });

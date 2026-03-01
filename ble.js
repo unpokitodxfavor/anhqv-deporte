@@ -30,6 +30,7 @@ class AmazfitDevice {
         this.syncTimeout = null; // Watchdog para la inactividad durante el sync
         this.isWriting = false; // Semáforo v1.3.0: Evita colisiones de escritura BLE
         this.log = (msg, type) => console.log(msg);
+        this.VERSION = "v1.6.0";
     }
 
     async connect(hexKey, logCallback) {
@@ -326,9 +327,9 @@ class AmazfitDevice {
         const lastSync = localStorage.getItem('last_sync_timestamp');
         let sinceDate = new Date(2020, 0, 1); // Default
         if (lastSync) {
-            // Restar 1 hora por seguridad (evitar missing activities por desajuste de reloj)
-            sinceDate = new Date(parseInt(lastSync) - (60 * 60 * 1000));
-            this.log(`Sincronización incremental desde: ${sinceDate.toLocaleString()} (incluyendo 1h de margen)`, "system");
+            // Restar 2 horas por seguridad (evitar missing activities por desajuste de reloj o zona horaria)
+            sinceDate = new Date(parseInt(lastSync) - (2 * 60 * 60 * 1000));
+            this.log(`Sincronización incremental desde: ${sinceDate.toLocaleString()} (incluyendo 2h de margen)`, "system");
         }
 
         this.log(`Solicitando actividades (${clearWatch ? 'BORRAR' : 'MANTENER'} tras sync)...`, "system");
@@ -445,13 +446,18 @@ class AmazfitDevice {
     _handleActivityData(event) {
         const data = new Uint8Array(event.target.value.buffer);
 
-        // El canal 0004 recibe notificaciones de control. Los datos puros van al canal 0005.
-        // Todo lo que empieza por 0x10 es un paquete de Response/Control.
-        const isControl = data[0] === 0x10;
+        // v1.6.0: Discriminación robusta de paquetes por UUID del canal
+        const uuid = event.target.uuid.toLowerCase();
+        const isControlChar = uuid === FETCH_CONTROL_ID;
+        const isDataChar = uuid === FETCH_DATA_ID;
+
+        // Todo lo que empieza por 0x10 en el canal de CONTROL es Response.
+        // Evitamos confundir el byte de secuencia 0x10 del canal de DATA con un control.
+        const isControl = isControlChar && data[0] === 0x10;
 
         if (isControl) {
             const hex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
-            this.log(`Control: [${hex}] (${data.length} bytes)`, "ble");
+            this.log(`Control (Mando): [${hex}] (${data.length} bytes)`, "ble");
 
             const cmdReply = data[1];
             const status = data[2];
@@ -527,30 +533,22 @@ class AmazfitDevice {
             return;
         }
 
-        // ACUMULACIÓN DE DATOS REALES
-        this.activityChunks.push(data);
-        const oldTotal = this.totalReceived;
-        this.totalReceived += data.length;
+        // ACUMULACIÓN DE DATOS REALES (Solo si viene del canal de DATA o no es control en el de mando)
+        if (isDataChar || !isControlChar) {
+            this.activityChunks.push(data);
+            const oldTotal = this.totalReceived;
+            this.totalReceived += data.length;
+            // Throttling y Detección de Inactividad (Zepp OS no necesita ACK progresivo)
+            if (this.syncTimeout) clearTimeout(this.syncTimeout);
+            this.syncTimeout = setTimeout(() => this._finalizeSync(), 5000); // 5s de silencio = FIN
 
-        // Log de chunks de datos (cada 4KB para no saturar el log)
-        if (Math.floor(this.totalReceived / 4096) > Math.floor(oldTotal / 4096)) {
-            const preview = data.length > 4 ? Array.from(data.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ') : "";
-            this.log(`[DATA] Recibido: ${(this.totalReceived / 1024).toFixed(1)} KB (Last: ${data.length}b, Hex: ${preview})`, "ble");
-        }
+            const now = Date.now();
+            if (now - this.lastUiUpdate > 300) {
+                this.lastUiUpdate = now;
+                window.dispatchEvent(new CustomEvent('amazfit-progress', {
+                    detail: { received: this.totalReceived }
+                }));
 
-        // Throttling y Detección de Inactividad (Zepp OS no necesita ACK progresivo)
-        if (this.syncTimeout) clearTimeout(this.syncTimeout);
-        this.syncTimeout = setTimeout(() => this._finalizeSync(), 5000); // 5s de silencio = FIN
-
-        const now = Date.now();
-        if (now - this.lastUiUpdate > 300) {
-            this.lastUiUpdate = now;
-            window.dispatchEvent(new CustomEvent('amazfit-progress', {
-                detail: { received: this.totalReceived }
-            }));
-
-            // Log cada 10KB para no saturar el DOM
-            if (Math.floor(this.totalReceived / 10240) > Math.floor((this.totalReceived - data.length) / 10240)) {
                 this.log(`Descargado: ${Math.floor(this.totalReceived / 1024)} KB...`, "system");
             }
         }
