@@ -389,20 +389,16 @@ class AmazfitDevice {
             // Fase 1: Descarga Directa
             this.log("Fase 1: Descarga Directa (SPORTS_DETAILS - 0x06)...", "ble");
 
-            const year = sinceDate.getFullYear();
-            const month = sinceDate.getMonth() + 1;
-            const day = sinceDate.getDate();
-            const hour = sinceDate.getHours();
-            const minute = sinceDate.getMinutes();
-            const second = sinceDate.getSeconds();
-
+            // v1.6.7: Forzamos siempre descarga desde 2020 para el comando directo
+            // El reloj ya gestiona internamente su puntero, pero pedir "desde siempre"
+            // soluciona bugs donde el reloj cree que ya envió algo que no llegó a la APP.
             const directFetch = new Uint8Array([
                 0x01, 0x06,
-                year & 0xFF, (year >> 8) & 0xFF,
-                month, day, hour, minute, second, 0x00
+                0xE4, 0x07, // 2020 (LSB)
+                0x01, 0x01, 0x00, 0x00, 0x00, 0x00
             ]);
 
-            this.log(`Comando: 01 06 ${year}-${month}-${day} ${hour}:${minute}:${second}`, "ble");
+            this.log(`Comando: 01 06 2020-01-01 00:00:00 (Full Search v1.6.7)`, "ble");
             await this._safeWrite(directFetch, "DIRECT_FETCH", 20, this.fetchControlChar);
 
             // Espera activa v1.3.13: 10s para ver si Fase 1 arranca el flujo
@@ -471,6 +467,7 @@ class AmazfitDevice {
                     if (data.length >= 14) {
                         try {
                             const year = data[7] | (data[8] << 8);
+                            const GAP_THRESHOLD_MS = 12 * 60 * 60 * 1000; // 12 horas de hueco = nueva actividad (v1.6.7)
                             const month = data[9] - 1; // JS meses son 0-11
                             const day = data[10];
                             const hour = data[11];

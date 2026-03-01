@@ -1,7 +1,7 @@
 /**
  * app.js - Main Application Logic
  */
-console.log("==> Cargando app.js (v1.6.6) <==");
+console.log("==> Cargando app.js (v1.6.7) <==");
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM Cargado. Iniciando app logic...");
@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navLog = document.getElementById('nav-log');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.6.6";
+    const APP_VERSION = "v1.6.7";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -573,7 +573,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm("Esto ignorará la marca de última sincronización y pedirá todos los datos al reloj (desde 2020). ¿Continuar?")) return;
         localStorage.removeItem('last_sync_timestamp');
         showLoading("Forzando Sincronización Completa...");
-        try { await window.amazfit.fetchActivities(); }
+        try { await window.amazfit.fetchActivities(new Date(2020, 0, 1)); } // Forzar siempre descarga total del buffer circular
         catch (err) { log(`Error: ${err.message}`, "error"); hideLoading(); }
     });
 
@@ -605,6 +605,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (activities.length === 0) {
                 log("Sincronización finalizada: No se encontraron actividades nuevas.", "system");
             } else {
+                const GAP_THRESHOLD_MS = 12 * 60 * 60 * 1000; // 12 horas de hueco = nueva actividad (más robusto para actividades largas)
                 // Si había mensaje de "No hay actividades", lo quitamos
                 const empty = activityList.querySelector('.empty-msg');
                 if (empty) empty.remove();

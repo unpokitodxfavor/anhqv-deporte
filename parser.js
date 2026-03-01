@@ -225,7 +225,7 @@ class ActivityParser {
 
         const activities = [];
         let currentPoints = [];
-        const GAP_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutos de hueco = nueva actividad
+        const GAP_THRESHOLD_MS = 12 * 60 * 60 * 1000; // 12 horas de hueco (v1.6.7)
 
         for (let i = 0; i < fullData.points.length; i++) {
             const p = fullData.points[i];
