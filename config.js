@@ -8,5 +8,8 @@ window.APP_CONFIG = {
     AMAZFIT_AUTH_KEY: "218236eafd6e9b5e05d02e4d112c6b57",
 
     // Tu Google Client ID para la exportación a Drive
-    GOOGLE_CLIENT_ID: "172563724481-dstk7h2db517c4956f0gl8en29ausli7.apps.googleusercontent.com"
+    GOOGLE_CLIENT_ID: "172563724481-dstk7h2db517c4956f0gl8en29ausli7.apps.googleusercontent.com",
+
+    // URL del Backend PHP (opcional) para sincronización en la nube
+    API_URL: "https://aquinohayquienviva.es/anhqv-deporte/api.php"
 };

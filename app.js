@@ -1,7 +1,7 @@
 /**
  * app.js - Main Application Logic
  */
-console.log("==> Cargando app.js (v1.6.0) <==");
+console.log("==> Cargando app.js (v1.6.5) <==");
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM Cargado. Iniciando app logic...");
@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navLog = document.getElementById('nav-log');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.6.0";
+    const APP_VERSION = "v1.6.5";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -98,15 +98,61 @@ document.addEventListener('DOMContentLoaded', () => {
     let allActivities = [];
     let currentView = 'activities'; // Track current view for "Back" button
 
-    try {
-        const stored = localStorage.getItem('amazfit_db');
-        if (stored) {
-            allActivities = JSON.parse(stored);
-            // Renderizar las últimas 5 actividades en la lista principal al cargar
-            const recent = [...allActivities].sort((a, b) => b.timestamp - a.timestamp).slice(0, 5);
-            recent.forEach(act => renderRealActivity(act, 0, true));
+    async function syncWithBackend() {
+        const apiUrl = window.APP_CONFIG?.API_URL;
+        if (!apiUrl) return;
+
+        const cloudStatus = document.getElementById('cloud-status');
+        try {
+            if (cloudStatus) { cloudStatus.innerText = "⏳"; cloudStatus.title = "Sincronizando..."; }
+            log("Sincronizando con la nube...", "system");
+
+            const response = await fetch(apiUrl);
+            if (!response.ok) throw new Error("Fallo al conectar con la nube");
+            const cloudActivities = await response.json();
+
+            if (Array.isArray(cloudActivities)) {
+                let added = 0;
+                cloudActivities.forEach(cloudAct => {
+                    const localIdx = allActivities.findIndex(a => a.timestamp === cloudAct.timestamp);
+                    if (localIdx === -1) {
+                        allActivities.push(cloudAct);
+                        added++;
+                    }
+                });
+                if (added > 0) {
+                    allActivities.sort((a, b) => b.timestamp - a.timestamp);
+                    localStorage.setItem('amazfit_db', JSON.stringify(allActivities));
+                    log(`${added} actividades recuperadas de la nube.`, "system");
+                    // Refrescar lista principal
+                    activityList.innerHTML = '';
+                    const recent = [...allActivities].slice(0, 5);
+                    recent.forEach(act => renderRealActivity(act, 0, true));
+                }
+                if (cloudStatus) { cloudStatus.innerText = "☁️"; cloudStatus.style.opacity = "1"; cloudStatus.title = "Nube sincronizada"; }
+            }
+        } catch (e) {
+            log(`Error Cloud Sync: ${e.message}`, "error");
+            if (cloudStatus) { cloudStatus.innerText = "❌"; cloudStatus.title = "Error de sincronización"; }
         }
-    } catch (e) { console.error("Error loading DB", e); }
+    }
+
+    // Carga inicial
+    (async () => {
+        try {
+            const stored = localStorage.getItem('amazfit_db');
+            if (stored) {
+                allActivities = JSON.parse(stored);
+                allActivities.sort((a, b) => b.timestamp - a.timestamp);
+                const recent = [...allActivities].slice(0, 5);
+                recent.forEach(act => renderRealActivity(act, 0, true));
+            }
+            // Intentar sincronizar con la nube tras cargar local
+            if (window.APP_CONFIG?.API_URL) {
+                await syncWithBackend();
+            }
+        } catch (e) { console.error("Error loading DB", e); }
+    })();
 
     function deleteFromDb(timestamp) {
         if (!confirm("¿Borrar esta actividad del historial?")) return;
@@ -128,7 +174,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 showView('stats');
             });
         }
-        log("Actividad borrada del historial.", "system");
+        log("Actividad borrada del historial local.", "system");
+
+        // Borrar de la nube
+        const apiUrl = window.APP_CONFIG?.API_URL;
+        if (apiUrl) {
+            fetch(`${apiUrl}?timestamp=${timestamp}`, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) log("Actividad borrada de la nube.", "system");
+                })
+                .catch(e => console.error("Cloud Delete failed", e));
+        }
     }
 
     function saveToDb(activity) {
@@ -148,7 +205,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 points: activity.points || [] // Guardamos los puntos para ver el mapa después
             };
             allActivities.push(summary);
+            allActivities.sort((a, b) => b.timestamp - a.timestamp);
             localStorage.setItem('amazfit_db', JSON.stringify(allActivities));
+
+            // Guardar en la nube
+            const apiUrl = window.APP_CONFIG?.API_URL;
+            if (apiUrl) {
+                fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(summary)
+                })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) log("Copia de seguridad en la nube completada.", "system");
+                    })
+                    .catch(e => console.error("Cloud Save failed", e));
+            }
         }
     }
 

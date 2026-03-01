@@ -2,7 +2,7 @@
 
 **Amazfit Ultra Tracker** es una aplicación web moderna y potente diseñada para sincronizar, visualizar y gestionar datos de actividad deportiva directamente desde dispositivos Huami/Amazfit (como Stratos, Verge, GTR, GTS, T-Rex, etc.) utilizando la API de **Web Bluetooth**.
 
-![Versión](https://img.shields.io/badge/version-1.6.0-brightgreen)
+![Versión](https://img.shields.io/badge/version-1.6.5-brightgreen)
 ![Tecnologías](https://img.shields.io/badge/tech-Vanilla_JS_|_CSS3_|_HTML5-blue)
 ![Licencia](https://img.shields.io/badge/license-MIT-orange)
 
@@ -21,10 +21,11 @@
 - **Dashboard de Estadísticas**: Análisis histórico con totales acumulados (histórico, mensual, semanal) y récords personales.
 - **Desglose Mensual**: Listado organizado por meses para una mejor navegación del historial.
 
-### 💾 Gestión de Datos y Exportación
-- **Exportación GPX**: Descarga tus actividades en formato GPX estándar para usarlas en Strava, Garmin Connect o Google Earth.
-- **Copia de Seguridad en la Nube**: Integración completa con **Google Drive** para guardar copias de seguridad del historial y subir archivos GPX automáticamente.
-- **Privacidad**: Todos los datos se almacenan localmente en el navegador (`LocalStorage`) hasta que decidas sincronizarlos con la nube.
+### 💾 Gestión de Datos y Cloud Sync
+- **Guardado en la Nube**: Integración con un backend **PHP/MySQL** propio para persistir actividades de forma permanente.
+- **Sincronización Multidispositivo**: Tus datos aparecen automáticamente al entrar desde cualquier navegador.
+- **Copia de Seguridad en Google Drive**: Opción adicional para exportar y guardar archivos GPX automáticamente en tu cuenta de Google.
+- **Privacidad**: Control total sobre tus datos guardados en tu propio servidor.
 
 ### 🛠️ Consola Técnica
 - **Registro en Tiempo Real**: Consola integrada para monitorear la comunicación Bluetooth y depurar posibles errores de conexión.
@@ -43,7 +44,8 @@ La aplicación ha sido desarrollada siguiendo principios de minimalismo y rendim
 - **APIs de Terceros**:
   - **Web Bluetooth API**: Para la comunicación con el hardware.
   - **Google Identity Services (GSI)**: Para la gestión de OAuth2.
-  - **Google Drive API**: Para el almacenamiento en la nube.
+  - **Google Drive API**: Para el almacenamiento en la nube (GPX).
+  - **Backend PHP/PDO**: Interfaz para el almacenamiento en base de datos MySQL.
 
 ### Estructura de Archivos
 - `index.html`: Estructura principal de la aplicación.
@@ -53,6 +55,8 @@ La aplicación ha sido desarrollada siguiendo principios de minimalismo y rendim
 - `parser.js`: Parsers de datos binarios y generador de archivos GPX.
 - `map.js`: Módulo de gestión de mapas Leaflet.
 - `config.js`: Configuración global y constantes.
+- `api.php`: Backend para la sincronización con Base de Datos.
+- `database.sql`: Estructura de la base de datos MySQL.
 
 ---
 
@@ -75,6 +79,8 @@ anhqv-deporte/
 ├── parser.js          # Procesamiento de datos
 ├── map.js             # Visualización geográfica
 ├── config.js          # Configuración
+├── api.php            # Backend PHP
+├── database.sql       # Script de la BD
 └── auth_key_guide.md  # Guía de autenticación
 ```
 
