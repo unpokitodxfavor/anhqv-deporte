@@ -1,7 +1,7 @@
 /**
  * app.js - Main Application Logic
  */
-console.log("==> Cargando app.js (v1.6.5) <==");
+console.log("==> Cargando app.js (v1.6.6) <==");
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM Cargado. Iniciando app logic...");
@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navLog = document.getElementById('nav-log');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.6.5";
+    const APP_VERSION = "v1.6.6";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -112,24 +112,47 @@ document.addEventListener('DOMContentLoaded', () => {
             const cloudActivities = await response.json();
 
             if (Array.isArray(cloudActivities)) {
-                let added = 0;
+                let downloaded = 0;
+                let uploaded = 0;
+
+                // 1. Descargar de nube a local si faltan
                 cloudActivities.forEach(cloudAct => {
-                    const localIdx = allActivities.findIndex(a => a.timestamp === cloudAct.timestamp);
-                    if (localIdx === -1) {
+                    const localExists = allActivities.some(a => a.timestamp === cloudAct.timestamp);
+                    if (!localExists) {
                         allActivities.push(cloudAct);
-                        added++;
+                        downloaded++;
                     }
                 });
-                if (added > 0) {
+
+                // 2. Subir de local a nube si faltan (Bidireccional)
+                for (const localAct of allActivities) {
+                    const cloudExists = cloudActivities.some(a => a.timestamp === localAct.timestamp);
+                    if (!cloudExists) {
+                        try {
+                            await fetch(apiUrl, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(localAct)
+                            });
+                            uploaded++;
+                        } catch (e) { console.error("Error al subir actividad antigua", e); }
+                    }
+                }
+
+                if (downloaded > 0 || uploaded > 0) {
                     allActivities.sort((a, b) => b.timestamp - a.timestamp);
                     localStorage.setItem('amazfit_db', JSON.stringify(allActivities));
-                    log(`${added} actividades recuperadas de la nube.`, "system");
+                    if (downloaded > 0) log(`${downloaded} actividades bajadas de la nube.`, "system");
+                    if (uploaded > 0) log(`${uploaded} actividades locales subidas a la nube.`, "system");
+
                     // Refrescar lista principal
                     activityList.innerHTML = '';
                     const recent = [...allActivities].slice(0, 5);
                     recent.forEach(act => renderRealActivity(act, 0, true));
                 }
+
                 if (cloudStatus) { cloudStatus.innerText = "☁️"; cloudStatus.style.opacity = "1"; cloudStatus.title = "Nube sincronizada"; }
+                log("Nube al día.", "system");
             }
         } catch (e) {
             log(`Error Cloud Sync: ${e.message}`, "error");
