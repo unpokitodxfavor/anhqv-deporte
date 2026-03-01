@@ -1,7 +1,7 @@
 /**
  * app.js - Main Application Logic
  */
-console.log("==> Cargando app.js (v1.5.7) <==");
+console.log("==> Cargando app.js (v1.5.9) <==");
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM Cargado. Iniciando app logic...");
@@ -18,6 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearLogsBtn = document.getElementById('clear-logs');
     const loadingOverlay = document.getElementById('loading-overlay');
     const cancelLoadingBtn = document.getElementById('cancel-loading');
+    const copyLogBtn = document.getElementById('copy-log');
+    const logSection = document.getElementById('log-section');
 
     // Navigation and View elements
     const activitySection = document.getElementById('activity-list-section');
@@ -31,9 +33,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const navActivities = document.getElementById('nav-activities');
     const navStats = document.getElementById('nav-stats');
+    const navLog = document.getElementById('nav-log');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.5.8";
+    const APP_VERSION = "v1.5.9";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -56,10 +59,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Navigation Logic
     function showView(viewId) {
-        [activityView, statsDashboard, settingsSection, breakdownSection].forEach(v => {
+        if (viewId !== 'detail') currentView = viewId;
+
+        [activityView, statsDashboard, settingsSection, breakdownSection, statsSection, logSection].forEach(v => {
             if (v) v.classList.add('hidden');
         });
-        [navActivities, navStats, navSettings].forEach(n => {
+        [navActivities, navStats, navSettings, navLog].forEach(n => {
             if (n) n.classList.remove('active');
         });
 
@@ -76,15 +81,23 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (viewId === 'breakdown') {
             breakdownSection?.classList.remove('hidden');
             navStats?.classList.add('active');
+        } else if (viewId === 'log') {
+            logSection?.classList.remove('hidden');
+            navLog?.classList.add('active');
+        } else if (viewId === 'detail') {
+            statsSection?.classList.remove('hidden');
         }
     }
 
     navActivities?.addEventListener('click', () => showView('activities'));
     navStats?.addEventListener('click', () => showView('stats'));
+    navLog?.addEventListener('click', () => showView('log'));
     navSettings?.addEventListener('click', () => showView('settings'));
 
     // Persistent storage Logic
     let allActivities = [];
+    let currentView = 'activities'; // Track current view for "Back" button
+
     try {
         const stored = localStorage.getItem('amazfit_db');
         if (stored) {
@@ -131,7 +144,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 timestamp: activity.timestamp,
                 stats: activity.stats,
                 durationSec: seconds,
-                pointsCount: activity.points?.length || 0
+                pointsCount: activity.points?.length || 0,
+                points: activity.points || [] // Guardamos los puntos para ver el mapa después
             };
             allActivities.push(summary);
             localStorage.setItem('amazfit_db', JSON.stringify(allActivities));
@@ -266,15 +280,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 [...activities].sort((a, b) => b.timestamp - a.timestamp).forEach(act => {
                     const item = document.createElement('div');
                     item.className = 'activity-item';
-                    item.style.cursor = 'default';
+                    item.style.cursor = 'pointer';
                     const dateStr = new Date(act.timestamp).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
                     item.innerHTML = `
                         <div class="activity-info">
                             <h4>Actividad ${dateStr}</h4>
                             <span>${act.stats.distance} km • ${act.stats.duration || '--:--'}</span>
                         </div>
-                        <button class="btn-delete" title="Borrar">🗑️</button>
+                        <div style="display: flex; align-items: center; gap: 5px;">
+                            <button class="btn-delete" title="Borrar">🗑️</button>
+                            <span class="arrow">→</span>
+                        </div>
                     `;
+                    item.onclick = (e) => {
+                        viewActivityDetail(act);
+                    };
                     const delBtn = item.querySelector('.btn-delete');
                     delBtn.onclick = (e) => {
                         e.stopPropagation();
@@ -413,6 +433,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     cancelLoadingBtn?.addEventListener('click', () => hideLoading());
     clearLogsBtn?.addEventListener('click', () => logConsole.innerHTML = `<div class="log-entry system">Consola limpia v${APP_VERSION}</div>`);
+    copyLogBtn?.addEventListener('click', () => {
+        const text = logConsole.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            alert("¡Contenido copiado al portapapeles!");
+        }).catch(err => {
+            log(`Error al copiar: ${err}`, "error");
+        });
+    });
 
     document.getElementById('delete-local-history')?.addEventListener('click', () => {
         if (confirm("¿Borrar todo el historial historial y reiniciar sincronización?")) {
@@ -488,6 +516,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    function viewActivityDetail(data) {
+        if (!data || !data.stats) return;
+
+        const dateStr = new Date(data.timestamp).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+        document.getElementById('stat-dist').innerText = data.stats.distance + ' km';
+        document.getElementById('stat-time').innerText = data.stats.duration;
+        document.getElementById('stat-cal').innerText = data.stats.calories + ' kcal';
+        document.getElementById('stat-hr').innerText = data.stats.avgHeartRate + ' bpm';
+        document.getElementById('stat-pace').innerText = (data.stats.pace || "--:--") + ' min/km';
+        document.getElementById('activity-title').innerText = `Actividad: ${dateStr}`;
+
+        showView('detail');
+
+        window.sportMap.init();
+        window.sportMap.renderRoute(data.points);
+
+        const filename = `amazfit_${data.timestamp}.gpx`;
+        const gpxBtn = document.getElementById('download-gpx');
+        if (gpxBtn) {
+            gpxBtn.onclick = () => {
+                const gpxStr = ActivityParser.exportToGPX(data);
+                const blob = new Blob([gpxStr], { type: "application/gpx+xml" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = filename; a.click();
+                URL.revokeObjectURL(url);
+            };
+        }
+
+        const gdriveBtn = document.getElementById('upload-gdrive-gpx');
+        if (gdriveBtn) {
+            gdriveBtn.onclick = () => {
+                const gpxStr = ActivityParser.exportToGPX(data);
+                uploadToDrive(filename, gpxStr, "application/gpx+xml");
+            };
+        }
+    }
+
     function renderRealActivity(data, index, isFromHistory = false) {
         if (!data || !data.stats) return;
 
@@ -522,37 +589,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateGlobalStats();
             }
         };
-        item.onclick = () => {
-            document.getElementById('stat-dist').innerText = data.stats.distance + ' km';
-            document.getElementById('stat-time').innerText = data.stats.duration;
-            document.getElementById('stat-cal').innerText = data.stats.calories + ' kcal';
-            document.getElementById('stat-hr').innerText = data.stats.avgHeartRate + ' bpm';
-            document.getElementById('stat-pace').innerText = (data.stats.pace || "--:--") + ' min/km';
-            document.getElementById('activity-title').innerText = `Actividad: ${dateStr}`;
-            activitySection.classList.add('hidden');
-            statsSection.classList.remove('hidden');
-            window.sportMap.init();
-            window.sportMap.renderRoute(data.points);
-            const filename = `amazfit_${data.timestamp}.gpx`;
-            const gpxBtn = document.getElementById('download-gpx');
-            if (gpxBtn) gpxBtn.onclick = () => {
-                const gpxStr = ActivityParser.exportToGPX(data);
-                const blob = new Blob([gpxStr], { type: "application/gpx+xml" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url; a.download = filename; a.click();
-                URL.revokeObjectURL(url);
-            };
-            const gdriveBtn = document.getElementById('upload-gdrive-gpx');
-            if (gdriveBtn) gdriveBtn.onclick = () => {
-                const gpxStr = ActivityParser.exportToGPX(data);
-                uploadToDrive(filename, gpxStr, "application/gpx+xml");
-            };
-        };
+        item.onclick = () => viewActivityDetail(data);
         activityList.insertBefore(item, activityList.firstChild);
     }
 
-    closeStatsBtn.onclick = () => { statsSection.classList.add('hidden'); activityView.classList.remove('hidden'); };
+    closeStatsBtn.onclick = () => {
+        showView(currentView);
+    };
 
     // Init
     const savedKey = localStorage.getItem('amazfit_auth_key') || window.APP_CONFIG?.AMAZFIT_AUTH_KEY;
