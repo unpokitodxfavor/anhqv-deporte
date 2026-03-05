@@ -1,7 +1,7 @@
 /**
  * app.js - Main Application Logic
  */
-console.log("==> Cargando app.js (v1.6.9) <==");
+console.log("==> Cargando app.js (v1.7.3) <==");
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM Cargado. Iniciando app logic...");
@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navLog = document.getElementById('nav-log');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.7.2";
+    const APP_VERSION = "v1.7.3";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -595,10 +595,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.addEventListener('amazfit-data', (event) => {
-        const { fullBuffer, complete, startTime } = event.detail;
+        const { fullBuffer, complete, startTime, baseLat, baseLng } = event.detail;
         if (complete) {
             hideLoading();
-            const activities = ActivityParser.parseMultiple(fullBuffer.buffer, startTime);
+            const activities = ActivityParser.parseMultiple(fullBuffer.buffer, startTime, baseLat, baseLng);
             let lastTS = 0;
             activities.forEach((act, i) => {
                 if (act?.isRealData) {

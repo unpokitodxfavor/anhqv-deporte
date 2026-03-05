@@ -30,7 +30,7 @@ class AmazfitDevice {
         this.syncTimeout = null; // Watchdog para la inactividad durante el sync
         this.isWriting = false; // Semáforo v1.3.0: Evita colisiones de escritura BLE
         this.log = (msg, type) => console.log(msg);
-        this.version = "v1.6.9";
+        this.version = "v1.7.3";
         this.isDownloading = false; // Nuevo estado para controlar la descarga
         this.currentStreamID = null; // Identificador del stream actual
         this.chars = {}; // Objeto para almacenar las características de forma más accesible
@@ -449,6 +449,8 @@ class AmazfitDevice {
                 }
 
                 let year = 2020, month = 1, day = 1, hour = 0, min = 0, sec = 0;
+                let baseLat = null, baseLng = null;
+
                 if (value.length >= 14) {
                     year = value[7] | (value[8] << 8);
                     month = value[9];
@@ -457,12 +459,23 @@ class AmazfitDevice {
                     min = value[12];
                     sec = value[13];
                 }
+
+                if (value.length >= 23) {
+                    // v1.7.3: Extracción de coordenadas base absolutas del payload del header (Zepp OS / RTOS)
+                    const headerView = new DataView(value.buffer);
+                    baseLat = headerView.getInt32(15, true);
+                    baseLng = headerView.getInt32(19, true);
+                    this.log(`Coordenadas base GPS detectadas en el header: ${baseLat}, ${baseLng}`, "system");
+                }
+
                 const dateStr = `${day}/${month}/${year}, ${hour}:${min}:${sec}`;
                 const streamID = `${year}-${month}-${day}-${hour}-${min}`;
 
                 this.log(`¡Actividad de ${dateStr} encontrada! (${dataSize} bytes)`, "success");
                 this.currentStreamID = streamID;
                 this.streamStartTime = new Date(year, month - 1, day, hour, min, sec);
+                this.streamBaseLat = baseLat;
+                this.streamBaseLng = baseLng;
                 this.lastActivityDate = this.streamStartTime;
                 this.activityChunks = [];
                 this.isDownloading = true;
@@ -565,6 +578,8 @@ class AmazfitDevice {
 
         const bufferToSync = fullBuffer;
         const timeToSync = this.streamStartTime;
+        const baseLat = this.streamBaseLat;
+        const baseLng = this.streamBaseLng;
 
         this.activityBuffer = bufferToSync;
         this.activityChunks = [];
@@ -574,7 +589,9 @@ class AmazfitDevice {
                 detail: {
                     fullBuffer: bufferToSync,
                     complete: true,
-                    startTime: timeToSync || null
+                    startTime: timeToSync || null,
+                    baseLat: baseLat,
+                    baseLng: baseLng
                 }
             }));
         }

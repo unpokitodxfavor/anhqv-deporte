@@ -3,7 +3,7 @@
  */
 
 class ActivityParser {
-    static VERSION = "v1.6.9";
+    static VERSION = "v1.7.3";
     /**
      * Parse binary activity stream
      * @param {ArrayBuffer} buffer 
@@ -53,7 +53,7 @@ class ActivityParser {
         return this.generateMockRoute();
     }
 
-    static parseZeppOsFormat(buffer, baseTimestamp) {
+    static parseZeppOsFormat(buffer, baseTimestamp, extBaseLat = null, extBaseLng = null) {
         // En Bip U Pro (Huami RTOS), el buffer ya viene sin el sequence byte (MTU header) 
         // gracias a la limpieza en ble.js.
         // Son bloques continuos de 8 bytes (Type, TimeOffset, 6 bytes payload)
@@ -73,9 +73,9 @@ class ActivityParser {
         let lastTimeOffset = 0;
 
         // Inicializar coordenadas a Madrid por defecto si no están en el buffer
-        // (Huami RTOS a veces da baseLng y baseLat en un paquete separado Summary)
-        let baseLng = Math.floor(-3.7038 * 3000000);
-        let baseLat = Math.floor(40.4168 * 3000000);
+        // (Huami RTOS a veces da baseLng y baseLat en un paquete separado Summary o en el Header 10 01 01)
+        let baseLng = (extBaseLng !== null) ? extBaseLng : Math.floor(-3.7038 * 3000000);
+        let baseLat = (extBaseLat !== null) ? extBaseLat : Math.floor(40.4168 * 3000000);
 
         const points = [];
         let totalDistance = 0;
@@ -220,8 +220,8 @@ class ActivityParser {
     /**
      * Intenta dividir el buffer en múltiples actividades si hay huecos temporales grandes
      */
-    static parseMultiple(buffer, baseTimestamp) {
-        const fullData = this.parseZeppOsFormat(buffer, baseTimestamp);
+    static parseMultiple(buffer, baseTimestamp, baseLat = null, baseLng = null) {
+        const fullData = this.parseZeppOsFormat(buffer, baseTimestamp, baseLat, baseLng);
         if (!fullData.isRealData || (!fullData.points || fullData.points.length === 0)) return [];
 
         const activities = [];
