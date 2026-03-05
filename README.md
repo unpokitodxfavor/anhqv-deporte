@@ -2,7 +2,7 @@
 
 **Amazfit Ultra Tracker** es una aplicación web moderna y potente diseñada para sincronizar, visualizar y gestionar datos de actividad deportiva directamente desde dispositivos Huami/Amazfit (como Stratos, Verge, GTR, GTS, T-Rex, etc.) utilizando la API de **Web Bluetooth**.
 
-![Versión](https://img.shields.io/badge/version-1.7.3-brightgreen)
+![Versión](https://img.shields.io/badge/version-1.7.4-brightgreen)
 ![Tecnologías](https://img.shields.io/badge/tech-Vanilla_JS_|_CSS3_|_HTML5-blue)
 ![Licencia](https://img.shields.io/badge/license-MIT-orange)
 
