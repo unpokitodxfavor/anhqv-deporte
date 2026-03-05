@@ -4,6 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Amazfit Ultra Tracker</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -14,7 +17,7 @@
     <!-- Google API para Drive -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js" async defer></script>
-    <script src="config.js?v=1.6.6"></script>
+    <script id="config-script" src="config_v172.js"></script>
 </head>
 
 <body class="dark-theme">
@@ -23,7 +26,7 @@
             <div class="logo">
                 <span class="icon">⚡</span>
                 <h1>Amazfit <small id="header-version"
-                        style="font-size: 0.4em; opacity: 0.6; vertical-align: middle;">v1.6.6</small>
+                        style="font-size: 0.4em; opacity: 0.6; vertical-align: middle;">v1.7.2</small>
                     <span id="cloud-status" style="font-size: 0.6em; opacity: 0.5;">☁️</span>
                 </h1>
             </div>
@@ -203,7 +206,7 @@
                     </div>
                 </div>
                 <div id="log-console" class="console">
-                    <div class="log-entry system">Listo para la acción. v1.6.6</div>
+                    <div class="log-entry system">Listo para la acción. v1.7.2</div>
                 </div>
             </section>
         </main>
@@ -220,10 +223,10 @@
     <!-- Libs -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script src="parser.js?v=1.6.6"></script>
-    <script src="ble.js?v=1.6.6"></script>
-    <script src="map.js?v=1.6.6"></script>
-    <script src="app.js?v=1.6.6"></script>
+    <script src="parser_v172.js"></script>
+    <script src="ble_v172.js"></script>
+    <script src="map_v172.js"></script>
+    <script src="app_v172.js"></script>
 </body>
 
 </html>

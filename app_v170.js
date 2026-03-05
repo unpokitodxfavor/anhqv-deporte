@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navLog = document.getElementById('nav-log');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.7.2";
+    const APP_VERSION = "v1.7.0";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -117,7 +117,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // 1. Descargar de nube a local si faltan
                 cloudActivities.forEach(cloudAct => {
-                    if (!cloudAct || !cloudAct.stats) return; // Saltar si faltan stats
                     const localExists = allActivities.some(a => a.timestamp === cloudAct.timestamp);
                     if (!localExists) {
                         allActivities.push(cloudAct);
@@ -146,9 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (downloaded > 0) log(`${downloaded} actividades bajadas de la nube.`, "system");
                     if (uploaded > 0) log(`${uploaded} actividades locales subidas a la nube.`, "system");
 
-                    // Refrescar lista principal (mostramos 10 para estar seguros)
+                    // Refrescar lista principal
                     activityList.innerHTML = '';
-                    const recent = [...allActivities].slice(0, 10);
+                    const recent = [...allActivities].slice(0, 5);
                     recent.forEach(act => renderRealActivity(act, 0, true));
                 }
 
@@ -168,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (stored) {
                 allActivities = JSON.parse(stored);
                 allActivities.sort((a, b) => b.timestamp - a.timestamp);
-                const recent = [...allActivities].slice(0, 10);
+                const recent = [...allActivities].slice(0, 5);
                 recent.forEach(act => renderRealActivity(act, 0, true));
             }
             // Intentar sincronizar con la nube tras cargar local
@@ -213,10 +212,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveToDb(activity) {
-        if (!activity || !activity.stats) {
-            console.error("No se puede guardar actividad sin estadísticas:", activity);
-            return;
-        }
         if (!allActivities.find(a => a.timestamp === activity.timestamp)) {
             let seconds = 0;
             if (activity.stats.duration) {
@@ -284,7 +279,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const groups = {};
         allActivities.forEach(act => {
-            if (!act || !act.stats) return; // Skip invalid data
             const d = parseFloat(act.stats.distance) || 0;
             const s = act.durationSec || 0;
             totalDist += d;
@@ -349,9 +343,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Setup clicks for general cards
         const cards = [
             { id: 'global-total-dist', title: 'Historial Completo', filter: () => true },
-            { id: 'month-total-dist', title: 'Este Mes', filter: (act) => act.stats && new Date(act.timestamp) >= startOfMonth },
-            { id: 'week-total-dist', title: 'Esta Semana', filter: (act) => act.stats && new Date(act.timestamp) >= startOfWeek },
-            { id: 'record-dist', title: 'Récord de Distancia', filter: (act) => act.stats && parseFloat(act.stats.distance) === maxDist }
+            { id: 'month-total-dist', title: 'Este Mes', filter: (act) => new Date(act.timestamp) >= startOfMonth },
+            { id: 'week-total-dist', title: 'Esta Semana', filter: (act) => new Date(act.timestamp) >= startOfWeek },
+            { id: 'record-dist', title: 'Récord de Distancia', filter: (act) => parseFloat(act.stats.distance) === maxDist }
         ];
 
         cards.forEach(card => {
@@ -387,7 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     item.innerHTML = `
                         <div class="activity-info">
                             <h4>Actividad ${dateStr}</h4>
-                            <span>${(act.stats && act.stats.distance) || '0.00'} km • ${(act.stats && act.stats.duration) || '--:--'}</span>
+                            <span>${act.stats.distance} km • ${act.stats.duration || '--:--'}</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 5px;">
                             <button class="btn-delete" title="Borrar">🗑️</button>
@@ -673,7 +667,7 @@ document.addEventListener('DOMContentLoaded', () => {
         item.innerHTML = `
             <div class="activity-info">
                 <h4>Actividad ${dateStr} ${isFromHistory ? '<small>(Guardada)</small>' : ''}</h4>
-                <span>${(data.stats && data.stats.distance) || '0.00'} km • ${(data.stats && data.stats.duration) || '--:--'}</span>
+                <span>${data.stats.distance} km • ${data.stats.duration || '--:--'}</span>
             </div>
             <div style="display: flex; align-items: center; gap: 5px;">
                 <button class="btn-delete" title="Borrar">🗑️</button>

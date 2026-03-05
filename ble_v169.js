@@ -333,22 +333,17 @@ class AmazfitDevice {
         });
     }
 
-    async fetchActivities(startDateOverride = null) {
+    async fetchActivities() {
         if (!this.authenticated) throw new Error("No autenticado");
 
         const clearWatch = document.getElementById('clear-watch-data')?.checked || false;
         this.shouldClearAfterSync = clearWatch;
-        this.lastActivityDate = null;
 
         const lastSync = localStorage.getItem('last_sync_timestamp');
-        let sinceDate = startDateOverride || new Date(2020, 0, 1);
-        if (!startDateOverride && lastSync) {
-            // Retrocedemos 2 días por seguridad para capturar huecos si falló algo ayer (v1.7.1)
-            sinceDate = new Date(parseInt(lastSync) - (48 * 60 * 60 * 1000));
-            this.log(`Marca de sincronización: ${new Date(parseInt(lastSync)).toLocaleString()}`, "system");
-            this.log(`Buscando desde ventana: ${sinceDate.toLocaleString()}`, "system");
-        } else if (!startDateOverride) {
-            this.log("Iniciando desde 2020 (sin marca previa)...", "system");
+        let sinceDate = new Date(2020, 0, 1);
+        if (lastSync) {
+            sinceDate = new Date(parseInt(lastSync) - (2 * 60 * 60 * 1000));
+            this.log(`Sincronización incremental desde: ${sinceDate.toLocaleString()}`, "system");
         }
 
         this.log("Iniciando secuencia de sincronización...", "system");
@@ -387,14 +382,19 @@ class AmazfitDevice {
             await this._safeWrite(new Uint8Array([0x01, 0x01]), "DISCOVERY", 5, this.chars.control);
             await new Promise(r => setTimeout(r, 1000));
 
-            // Fase 3: Búsqueda Recursiva v1.6.9
-            await this._requestSearch(sinceDate);
+            // Fase 3: Búsqueda de Actividades
+            this.log("Buscando nuevas actividades...", "system");
+            const directFetch = new Uint8Array([
+                0x01, 0x06, 2020 & 0xFF, (2020 >> 8) & 0xFF,
+                0x01, 0x01, 0x00, 0x00, 0x00, 0x00
+            ]);
+            await this._safeWrite(directFetch, "SEARCH", 10, this.chars.control);
 
             // Watchdog de seguridad v1.6.9
             this.syncWatchdog = setTimeout(() => {
                 if (!this.isDownloading && this.totalReceived === 0) {
-                    this.log("El reloj no ha respondido. Si hay actividades nuevas, intenta re-conectar.", "warn");
-                    window.dispatchEvent(new CustomEvent('amazfit-data-finished'));
+                    this.log("El reloj no ha respondido a la búsqueda. Intenta re-conectar.", "warn");
+                    window.dispatchEvent(new CustomEvent('ble-timeout'));
                 }
             }, 10000);
 
@@ -402,23 +402,6 @@ class AmazfitDevice {
             this.log(`Error en fetchActivities: ${err.message}`, "error");
             throw err;
         }
-    }
-
-    async _requestSearch(date) {
-        const year = date.getFullYear();
-        const month = date.getMonth() + 1;
-        const day = date.getDate();
-        const hour = date.getHours();
-        const min = date.getMinutes();
-        const sec = date.getSeconds();
-
-        this.log(`Buscando actividades desde: ${day}/${month}/${year} ${hour}:${min}...`, "system");
-
-        const cmd = new Uint8Array([
-            0x01, 0x06, year & 0xFF, (year >> 8) & 0xFF,
-            month, day, hour, min, sec, 0x00
-        ]);
-        await this._safeWrite(cmd, "SEARCH_CMD", 10, this.chars.control);
     }
 
 
@@ -441,13 +424,6 @@ class AmazfitDevice {
             if (value[1] === 0x01 && value[2] === 0x01) {
                 const dataSize = (value[3] | (value[4] << 8) | (value[5] << 16) | (value[6] << 24));
 
-                if (dataSize === 0) {
-                    this.log("¡Todo al día! No hay más actividades nuevas.", "success");
-                    if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
-                    window.dispatchEvent(new CustomEvent('amazfit-data-finished'));
-                    return;
-                }
-
                 let year = 2020, month = 1, day = 1, hour = 0, min = 0, sec = 0;
                 if (value.length >= 14) {
                     year = value[7] | (value[8] << 8);
@@ -460,39 +436,46 @@ class AmazfitDevice {
                 const dateStr = `${day}/${month}/${year}, ${hour}:${min}:${sec}`;
                 const streamID = `${year}-${month}-${day}-${hour}-${min}`;
 
-                this.log(`¡Actividad de ${dateStr} encontrada! (${dataSize} bytes)`, "success");
+                if (this.isDownloading) {
+                    if (this.currentStreamID === streamID) {
+                        this.log(`Aviso: Recibido header duplicado para ${streamID}. Ignorando.`, "warn");
+                        return;
+                    }
+                    this.log(`Cambio de bloque: Finalizando ${this.currentStreamID} e iniciando ${streamID}`, "system");
+                    this._finalizeSync();
+                }
+
+                this.log(`¡Actividad encontrada! Fecha: ${dateStr}. Tamaño: ${dataSize} bytes.`, "success");
                 this.currentStreamID = streamID;
                 this.streamStartTime = new Date(year, month - 1, day, hour, min, sec);
-                this.lastActivityDate = this.streamStartTime;
                 this.activityChunks = [];
                 this.isDownloading = true;
 
+                // Avisar al watchdog de que hay actividad
                 if (this.syncWatchdog) {
                     clearTimeout(this.syncWatchdog);
                     this.syncWatchdog = null;
                 }
 
+                // Paso 2: Pedir los datos
                 setTimeout(() => {
-                    this._safeWrite(new Uint8Array([0x02]), "FETCH_DATA", 5, this.chars.control);
-                }, 500);
+                    this.log(`Pidiendo datos del bloque...`, "system");
+                    this._safeWrite(new Uint8Array([0x02]), "STEP_2", 10, this.chars.control);
+                }, 1000);
                 return;
             }
 
             // Confirmación de fin (10 02 01)
             if (value[1] === 0x02 && value[2] === 0x01) {
-                this.log(`Descarga de bloque terminada.`, "success");
+                this.log(`Fin de descarga confirmado para ${this.currentStreamID}.`, "success");
                 this._finalizeSync();
                 this.isDownloading = false;
 
-                // Enviar ACK y BUSCAR LA SIGUIENTE
-                setTimeout(async () => {
-                    this.log(`Consolidando bloque...`, "system");
-                    await this._safeWrite(new Uint8Array([0x03]), "ACK_FINAL", 5, this.chars.control);
-
-                    if (this.lastActivityDate) {
-                        await new Promise(r => setTimeout(r, 1000));
-                        await this._requestSearch(new Date(this.lastActivityDate.getTime() + 1000));
-                    }
+                // Enviar ACK para avanzar el historial en el reloj
+                setTimeout(() => {
+                    this.log(`Enviando ACK 0x03...`, "system");
+                    // En Bip U Pro, 0x03 suele ser suficiente
+                    this._safeWrite(new Uint8Array([0x03]), "ACK_FINAL", 10, this.chars.control);
                 }, 500);
                 return;
             }

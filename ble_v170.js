@@ -343,12 +343,8 @@ class AmazfitDevice {
         const lastSync = localStorage.getItem('last_sync_timestamp');
         let sinceDate = startDateOverride || new Date(2020, 0, 1);
         if (!startDateOverride && lastSync) {
-            // Retrocedemos 2 días por seguridad para capturar huecos si falló algo ayer (v1.7.1)
-            sinceDate = new Date(parseInt(lastSync) - (48 * 60 * 60 * 1000));
-            this.log(`Marca de sincronización: ${new Date(parseInt(lastSync)).toLocaleString()}`, "system");
-            this.log(`Buscando desde ventana: ${sinceDate.toLocaleString()}`, "system");
-        } else if (!startDateOverride) {
-            this.log("Iniciando desde 2020 (sin marca previa)...", "system");
+            sinceDate = new Date(parseInt(lastSync) + 1000);
+            this.log(`Sincronización incremental desde: ${sinceDate.toLocaleString()}`, "system");
         }
 
         this.log("Iniciando secuencia de sincronización...", "system");
