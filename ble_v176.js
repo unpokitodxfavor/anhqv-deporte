@@ -389,17 +389,9 @@ class AmazfitDevice {
             await this._safeWrite(new Uint8Array([0x01, 0x01]), "DISCOVERY", 5, this.chars.control);
             await new Promise(r => setTimeout(r, 1000));
 
-            // Fase 3: Cabeceras (v1.7.4) - Obtenemos resúmenes para tener las coordenadas base reales
-            this.log("Pidiendo resúmenes de actividades para obtener GPS base...", "system");
-            this.summaries = [];
-            this.syncMode = 'summaries';
-            await this._safeWrite(new Uint8Array([0x01, 0x02]), "GET_SUMMARIES", 5, this.chars.control);
-            await new Promise(r => setTimeout(r, 800));
-            await this._safeWrite(new Uint8Array([0x02]), "FETCH_SUMMARIES", 5, this.chars.control);
-
-            // Esperar un poco a que lleguen los resúmenes (se procesan en _handleActivityData)
-            // v1.7.4: Implementamos un timeout corto pero suficiente para que el volcado termine
-            await new Promise(r => setTimeout(r, 2000));
+            // Fase 3 (Hack Resúmenes) fue eliminada porque intentaba obtener las coordenadas del canal
+            // de pulsaciones manuales, lo que pisaba las coordenadas correctas del header de la actividad
+            // y además causaba cuelgues constantes en la sincronización.
 
             // Fase 4: Búsqueda Recursiva v1.7.4
             this.syncMode = 'activities';
@@ -508,14 +500,6 @@ class AmazfitDevice {
 
             // Confirmación de fin (10 02 01)
             if (value[1] === 0x02 && value[2] === 0x01) {
-                if (this.syncMode === 'summaries') {
-                    this.log(`Recepción de resúmenes finalizada. (${this.summaries.length} encontrados)`, "success");
-                    // No finalizamos el sync aquí, solo esperamos el ACK para pasar a la búsqueda
-                    setTimeout(async () => {
-                        await this._safeWrite(new Uint8Array([0x03]), "ACK_SUMMARIES", 5, this.chars.control);
-                    }, 200);
-                    return;
-                }
 
                 this.log(`Descarga de bloque terminada.`, "success");
                 this._finalizeSync();
@@ -548,11 +532,6 @@ class AmazfitDevice {
 
         // ACUMULACIÓN DE DATOS REPRODUCIBLES
         if (isDataChar || !isControlChar) {
-            if (this.syncMode === 'summaries') {
-                this._parseSummaryPackage(value);
-                return;
-            }
-
             // Guardar el chunk (quitando el primer byte de contador)
             this.activityChunks.push(value);
             this.totalReceived += value.length;
@@ -584,20 +563,9 @@ class AmazfitDevice {
         this.syncTimeout = null;
         this.syncWatchdog = null;
 
-        // Intentar obtener las coordenadas base del resumen que coincida con el timestamp
+        // Intentar obtener las coordenadas base del header de la actividad
         let baseLat = this.streamBaseLat;
         let baseLng = this.streamBaseLng;
-
-        if (this.summaries.length > 0 && this.streamStartTime) {
-            const unixTs = Math.floor(this.streamStartTime.getTime() / 1000);
-            // Buscar el resumen más cercano en tiempo (huami a veces desfasa 1-2s el arranque)
-            const match = this.summaries.find(s => Math.abs(s.ts - unixTs) < 10);
-            if (match && match.lat !== 0 && match.lng !== 0) {
-                baseLat = match.lat;
-                baseLng = match.lng;
-                this.log(`Coordenadas base recuperadas de resúmenes: ${baseLat}, ${baseLng}`, "success");
-            }
-        }
 
         let totalPayloadSize = 0;
         for (const chunk of this.activityChunks) {
@@ -637,30 +605,6 @@ class AmazfitDevice {
         }
     }
 
-    _parseSummaryPackage(value) {
-        if (!this._summaryBuffer) this._summaryBuffer = new Uint8Array(0);
-        // Quitar el primer byte de contador secuencial (0-255)
-        const chunk = value.slice(1);
-        const newBuf = new Uint8Array(this._summaryBuffer.length + chunk.length);
-        newBuf.set(this._summaryBuffer);
-        newBuf.set(chunk, this._summaryBuffer.length);
-        this._summaryBuffer = newBuf;
-
-        // Cada resumen mide 30 o 32 bytes en Huami RTOS (Bip U Pro, GTR 2/3/4)
-        // Intentar parsear mientras queden suficientes datos.
-        while (this._summaryBuffer.length >= 30) {
-            const view = new DataView(this._summaryBuffer.buffer, this._summaryBuffer.byteOffset, this._summaryBuffer.byteLength);
-            const ts = view.getUint32(0, true);
-            const lng = view.getInt32(18, true);
-            const lat = view.getInt32(22, true);
-
-            if (ts > 1000000000 && (lat !== 0 || lng !== 0)) {
-                this.summaries.push({ ts, lat, lng });
-            }
-            // Avanzar 30 bytes (algunos modelos usan 32, pero 30 es el estándar base)
-            this._summaryBuffer = this._summaryBuffer.slice(30);
-        }
-    }
 
     async _retryWithExtendedCommand() {
         this.log("Modo Compatibilidad Index (v1.6.9)...", "system");

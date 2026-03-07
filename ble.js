@@ -637,30 +637,7 @@ class AmazfitDevice {
         }
     }
 
-    _parseSummaryPackage(value) {
-        if (!this._summaryBuffer) this._summaryBuffer = new Uint8Array(0);
-        // Quitar el primer byte de contador secuencial (0-255)
-        const chunk = value.slice(1);
-        const newBuf = new Uint8Array(this._summaryBuffer.length + chunk.length);
-        newBuf.set(this._summaryBuffer);
-        newBuf.set(chunk, this._summaryBuffer.length);
-        this._summaryBuffer = newBuf;
 
-        // Cada resumen mide 30 o 32 bytes en Huami RTOS (Bip U Pro, GTR 2/3/4)
-        // Intentar parsear mientras queden suficientes datos.
-        while (this._summaryBuffer.length >= 30) {
-            const view = new DataView(this._summaryBuffer.buffer, this._summaryBuffer.byteOffset, this._summaryBuffer.byteLength);
-            const ts = view.getUint32(0, true);
-            const lng = view.getInt32(18, true);
-            const lat = view.getInt32(22, true);
-
-            if (ts > 1000000000 && (lat !== 0 || lng !== 0)) {
-                this.summaries.push({ ts, lat, lng });
-            }
-            // Avanzar 30 bytes (algunos modelos usan 32, pero 30 es el estándar base)
-            this._summaryBuffer = this._summaryBuffer.slice(30);
-        }
-    }
 
     async _retryWithExtendedCommand() {
         this.log("Modo Compatibilidad Index (v1.6.9)...", "system");

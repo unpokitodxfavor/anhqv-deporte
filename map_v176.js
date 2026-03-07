@@ -27,15 +27,20 @@ class SportMap {
     renderRoute(points) {
         if (!this.map) this.init();
 
-        if (!points || points.length === 0) {
-            console.warn("No hay puntos GPS para renderizar en el mapa.");
+        const validPoints = points ? points.filter(p => !p.isHrOnly && (Math.abs(p.lat) > 0.001 || Math.abs(p.lng) > 0.001)) : [];
+
+        if (validPoints.length === 0) {
+            console.warn("No hay puntos GPS válidos para renderizar en el mapa.");
             if (this.polyline) this.map.removeLayer(this.polyline);
             if (this.startMarker) this.map.removeLayer(this.startMarker);
             if (this.endMarker) this.map.removeLayer(this.endMarker);
+            document.getElementById(this.elementId).style.display = 'none';
             return;
         }
 
-        const latLngs = points.map(p => [p.lat, p.lng]);
+        document.getElementById(this.elementId).style.display = 'block';
+
+        const latLngs = validPoints.map(p => [p.lat, p.lng]);
 
         if (this.polyline) {
             this.map.removeLayer(this.polyline);
