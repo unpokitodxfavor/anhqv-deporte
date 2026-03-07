@@ -72,10 +72,10 @@ class ActivityParser {
         let totalTimeSecs = 0;
         let lastTimeOffset = 0;
 
-        // Inicializar coordenadas a Madrid por defecto si no están en el buffer
+        // Inicializar coordenadas a Madrid por defecto si no están en el buffer u origen en 0,0
         // (Huami RTOS a veces da baseLng y baseLat en un paquete separado Summary o en el Header 10 01 01)
-        let baseLng = (extBaseLng !== null) ? extBaseLng : Math.floor(-3.7038 * 3000000);
-        let baseLat = (extBaseLat !== null) ? extBaseLat : Math.floor(40.4168 * 3000000);
+        let baseLng = (extBaseLng != null && extBaseLng !== 0 && !isNaN(extBaseLng)) ? extBaseLng : Math.floor(-3.7038 * 3000000);
+        let baseLat = (extBaseLat != null && extBaseLat !== 0 && !isNaN(extBaseLat)) ? extBaseLat : Math.floor(40.4168 * 3000000);
 
         const points = [];
         let totalDistance = 0;

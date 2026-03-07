@@ -478,8 +478,8 @@ class AmazfitDevice {
                 if (value.length >= 23) {
                     // v1.7.4: Usar la vista correcta considerando el byteOffset (Web Bluetooth safety)
                     const headerView = new DataView(value.buffer, value.byteOffset, value.byteLength);
-                    baseLat = headerView.getInt32(15, true);
-                    baseLng = headerView.getInt32(19, true);
+                    baseLng = headerView.getInt32(15, true);
+                    baseLat = headerView.getInt32(19, true);
                     this.log(`Coordenadas base GPS detectadas en el header: ${baseLat}, ${baseLng}`, "system");
                 }
 
@@ -651,8 +651,8 @@ class AmazfitDevice {
         while (this._summaryBuffer.length >= 30) {
             const view = new DataView(this._summaryBuffer.buffer, this._summaryBuffer.byteOffset, this._summaryBuffer.byteLength);
             const ts = view.getUint32(0, true);
-            const lat = view.getInt32(18, true);
-            const lng = view.getInt32(22, true);
+            const lng = view.getInt32(18, true);
+            const lat = view.getInt32(22, true);
 
             if (ts > 1000000000 && (lat !== 0 || lng !== 0)) {
                 this.summaries.push({ ts, lat, lng });
