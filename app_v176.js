@@ -723,5 +723,5 @@ document.addEventListener('DOMContentLoaded', () => {
         el.innerText = APP_VERSION;
     });
 
-    log(`Iniciando App v${APP_VERSION}...`, 'system');
+    log(`Iniciando App ${APP_VERSION}...`, 'system');
 });
