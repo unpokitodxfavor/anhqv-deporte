@@ -1,0 +1,12 @@
+open aquinohayquienviva.es
+deporte
+Efese2026@
+put app_v176.js
+put ble_v176.js
+put parser_v176.js
+put app.js
+put ble.js
+put parser.js
+put README.md
+put index.html
+quit

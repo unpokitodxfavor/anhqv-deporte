@@ -3,7 +3,7 @@
  */
 
 class ActivityParser {
-    static VERSION = "v1.7.5";
+    static VERSION = "v1.7.6";
     /**
      * Parse binary activity stream
      * @param {ArrayBuffer} buffer 
@@ -202,6 +202,7 @@ class ActivityParser {
         }
 
         const pointsFound = mapPoints.length > 0 || points.length > 0;
+        const validSummary = totalTimeSecs > 0 || totalDistance > 0 || hrCount > 0;
 
         return {
             points: mapPoints.length > 0 ? mapPoints : points,
@@ -212,8 +213,8 @@ class ActivityParser {
                 calories: Math.floor(totalDistance * 60) || "--",
                 avgHeartRate: hrCount > 0 ? Math.floor(hrSum / hrCount) : "--"
             },
-            isRealData: pointsFound,
-            timestamp: firstPointTime ? firstPointTime.getTime() : Date.now()
+            isRealData: pointsFound || validSummary,
+            timestamp: firstPointTime ? firstPointTime.getTime() : (baseTimestamp ? baseTimestamp.getTime() : Date.now())
         };
     }
 
@@ -222,23 +223,33 @@ class ActivityParser {
      */
     static parseMultiple(buffer, baseTimestamp, baseLat = null, baseLng = null) {
         const fullData = this.parseZeppOsFormat(buffer, baseTimestamp, baseLat, baseLng);
-        if (!fullData.isRealData || (!fullData.points || fullData.points.length === 0)) return [];
+        if (!fullData.isRealData) return [];
+
+        if (!fullData.points || fullData.points.length === 0) {
+            return [fullData];
+        }
 
         const activities = [];
         let currentPoints = [];
         const GAP_THRESHOLD_MS = 12 * 60 * 60 * 1000; // 12 horas de hueco (v1.6.7)
+        let hasGaps = false;
 
         for (let i = 0; i < fullData.points.length; i++) {
             const p = fullData.points[i];
             if (currentPoints.length > 0) {
                 const prev = currentPoints[currentPoints.length - 1];
                 if (p.time - prev.time > GAP_THRESHOLD_MS) {
+                    hasGaps = true;
                     // Split!
                     activities.push(this._packageActivity(currentPoints));
                     currentPoints = [];
                 }
             }
             currentPoints.push(p);
+        }
+
+        if (!hasGaps) {
+            return [fullData];
         }
 
         if (currentPoints.length > 0) {

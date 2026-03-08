@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navLog = document.getElementById('nav-log');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.7.5";
+    const APP_VERSION = "v1.7.6";
 
     // --- Logger ---
     function log(message, type = 'system') {
@@ -607,6 +607,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (act.timestamp > lastTS) lastTS = act.timestamp;
                 }
             });
+            updateGlobalStats();
             if (lastTS) localStorage.setItem('last_sync_timestamp', lastTS.toString());
             if (activities.length === 0) {
                 log("Sincronización finalizada: No se encontraron actividades nuevas.", "system");
