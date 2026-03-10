@@ -2,10 +2,12 @@ open aquinohayquienviva.es
 deporte
 Efese2026@
 put index.html
-put app_v177.js
-put ble_v177.js
-put parser_v177.js
-put map_v177.js
-put config_v177.js
+put app_v178.js
+put ble_v178.js
+put parser_v178.js
+put map_v178.js
+put config_v178.js
+put index.html
+put styles.css
 put README.md
 quit
