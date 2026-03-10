@@ -1,7 +1,7 @@
 /**
  * app.js - Main Application Logic
  */
-console.log("==> Cargando app.js (v1.7.3) <==");
+console.log("==> Cargando app.js (v1.7.7) <==");
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOM Cargado. Iniciando app logic...");
@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const navLog = document.getElementById('nav-log');
     const navSettings = document.getElementById('nav-settings');
 
-    const APP_VERSION = "v1.7.6";
+    const APP_VERSION = "v1.7.7";
 
     // --- Logger ---
     function log(message, type = 'system') {

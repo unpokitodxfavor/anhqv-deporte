@@ -30,7 +30,7 @@ class AmazfitDevice {
         this.syncTimeout = null; // Watchdog para la inactividad durante el sync
         this.isWriting = false; // Semáforo v1.3.0: Evita colisiones de escritura BLE
         this.log = (msg, type) => console.log(msg);
-        this.version = "v1.7.6";
+        this.version = "v1.7.7";
         this.isDownloading = false; // Nuevo estado para controlar la descarga
         this.currentStreamID = null; // Identificador del stream actual
         this.chars = {}; // Objeto para almacenar las características de forma más accesible
@@ -561,6 +561,7 @@ class AmazfitDevice {
         if (this.syncTimeout) clearTimeout(this.syncTimeout);
         if (this.syncWatchdog) clearTimeout(this.syncWatchdog);
         this.syncTimeout = null;
+        this.version = "v1.7.7";
         this.syncWatchdog = null;
 
         // Intentar obtener las coordenadas base del header de la actividad
