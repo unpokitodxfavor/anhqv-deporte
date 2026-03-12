@@ -7,17 +7,16 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <title>Amazfit Sync v1.7.9</title>
+    <title>Amazfit Sync v1.8.0</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <!-- Google API para Drive -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js" async defer></script>
-    <script id="config-script" src="config_v179.js"></script>
+    <script id="config-script" src="config_v180.js"></script>
 </head>
 
 <body class="dark-theme">
@@ -26,7 +25,7 @@
             <div class="logo">
                 <span class="icon">⚡</span>
                 <h1>Amazfit <small id="header-version"
-                        style="font-size: 0.4em; opacity: 0.6; vertical-align: middle;">v1.7.9</small>
+                        style="font-size: 0.4em; opacity: 0.6; vertical-align: middle;">v1.8.0</small>
                     <span id="cloud-status" style="font-size: 0.6em; opacity: 0.5;">☁️</span>
                 </h1>
             </div>
@@ -52,7 +51,7 @@
                     </div>
                     <button id="connect-btn" class="btn primary">Conectar Reloj</button>
                     <p class="hint" style="text-align: center;">
-                        ¿Necesitas ayuda? <a href="auth_key_guide.md">Ver guía</a> • <span id="version-display"></span>
+                        ¿Necesitas ayuda? <a href="auth_key_guide.md">Ver guía</a> • <span id="version-display">v1.8.0</span>
                     </p>
                 </section>
 
@@ -64,11 +63,6 @@
 
                     <div id="sync-options" class="hint"
                         style="margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <input type="checkbox" id="clear-watch-data" style="width: 16px; height: 16px;">
-                            <label for="clear-watch-data" style="cursor: pointer;">Borrar datos del reloj tras
-                                descargar</label>
-                        </div>
                         <p class="hint" style="margin-top: 5px; font-size: 11px;">
                             Si una actividad no aparece, prueba el <a href="#" id="force-full-sync-link"
                                 style="text-decoration: underline; color: var(--secondary);">Modo Sincronización
@@ -82,7 +76,6 @@
                 </section>
             </section>
 
-            <!-- Nueva sección de Estadísticas Globales -->
             <section id="stats-dashboard-section" class="hidden">
                 <div class="stats-grid animate-fade">
                     <div class="stat-card glass highlight">
@@ -118,49 +111,25 @@
                         <p class="empty-msg">Cargando estadísticas...</p>
                     </div>
                 </div>
-
-                <div class="card glass" style="margin-top: 20px;">
-                    <h3>Copia de Seguridad</h3>
-                    <button id="export-gdrive" class="btn secondary full-width">
-                        📁 Guardar Histórico en Google Drive
-                    </button>
-                </div>
             </section>
-            <!-- Nueva sección de Desglose de Actividades -->
+
             <section id="breakdown-section" class="hidden">
                 <div class="card-header">
                     <button id="close-breakdown" class="btn small secondary">← Volver</button>
                     <h2 id="breakdown-title">Actividades</h2>
                 </div>
-                <div id="breakdown-list" class="list-container">
-                    <!-- Dinámico -->
-                </div>
+                <div id="breakdown-list" class="list-container"></div>
             </section>
 
-            <!-- Sección de Ajustes -->
             <section id="settings-section" class="hidden">
                 <div class="card glass">
-                    <h3>Configuración de Google Drive</h3>
-                    <p class="hint">Para habilitar la subida automática, introduce tu Client ID de la consola de Google.
-                    </p>
-                    <div class="input-group">
-                        <input type="text" id="gdrive-client-id" placeholder="Google Client ID">
-                        <button id="save-gdrive-id" class="btn secondary">💾</button>
-                    </div>
-                    <p class="hint">Las actividades se guardan en una carpeta llamada 'amazfit'.</p>
-                </div>
-
-                <div class="card glass" style="margin-top: 20px;">
                     <h3>Mantenimiento</h3>
                     <button id="force-full-sync" class="btn secondary full-width" style="margin-bottom: 10px;">Forzar
                         Sincronización Completa</button>
                     <button id="delete-local-history" class="btn danger full-width">🗑️ Borrar Historial Local</button>
-                    <p class="hint" style="margin-top: 10px;">Esto borrará las estadísticas acumuladas pero no los
-                        archivos descargados.</p>
                 </div>
             </section>
 
-            <!-- Vista de Estadísticas (Fullscreen Overlay) -->
             <section id="stats-section" class="fullscreen-overlay hidden">
                 <div id="map" class="map-fullscreen"></div>
 
@@ -176,7 +145,6 @@
                         <span class="label">Distancia</span>
                         <span class="value" id="stat-dist">0.00 km</span>
                     </div>
-
                     <div class="stat-card">
                         <span class="label">Duración</span>
                         <span class="value" id="stat-time">00:00:00</span>
@@ -185,7 +153,6 @@
                         <span class="label">Ritmo</span>
                         <span class="value" id="stat-pace">--:-- min/km</span>
                     </div>
-
                     <div class="stat-card">
                         <span class="label">Corazón</span>
                         <span class="value" id="stat-hr">-- bpm</span>
@@ -206,27 +173,24 @@
                     </div>
                 </div>
                 <div id="log-console" class="console">
-                    <div class="log-entry system">Listo para la acción. v1.7.8</div>
+                    <div class="log-entry system">Listo para la acción. v1.8.0</div>
                 </div>
             </section>
         </main>
     </div>
 
-    <!-- Modals / Overlays -->
     <div id="loading-overlay" class="overlay" style="display: none;">
         <div class="spinner"></div>
         <p id="loading-text">Sincronizando reloj...</p>
-        <p id="loading-subtext" style="font-size: 12px; color: #94a3b8; margin-top: 10px;"></p>
         <button id="cancel-loading" class="btn small secondary" style="margin-top: 20px;">Cancelar</button>
     </div>
 
-    <!-- Libs -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script src="parser_v179.js"></script>
-    <script src="ble_v179.js"></script>
-    <script src="map_v179.js"></script>
-    <script src="app_v179.js"></script>
+    <script src="parser_v180.js"></script>
+    <script src="ble_v180.js"></script>
+    <script src="map_v180.js"></script>
+    <script src="app_v180.js"></script>
 </body>
 
 </html>
