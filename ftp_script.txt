@@ -1,6 +1,0 @@
-open aquinohayquienviva.es
-deporte
-Efese2026@
-pwd
-ls
-quit

@@ -3,7 +3,7 @@
  */
 
 class ActivityParser {
-    static VERSION = "v1.7.7";
+    static VERSION = "v1.7.8";
     /**
      * Parse binary activity stream
      * @param {ArrayBuffer} buffer 
@@ -126,8 +126,14 @@ class ActivityParser {
                         // Filtro de ruido: si el salto es > 50km entre puntos, es un error de coordenadas base
                         if (dist < 50) {
                             totalDistance += dist;
+                        } else {
+                            console.warn(`Salto GPS excesivo detectado: ${dist.toFixed(2)}km. Ignorando distancia.`);
                         }
+                    } else if (Math.abs(curLat) > 0.001) {
+                         // Primer punto válido
+                         console.log(`Primer punto GPS válido: ${curLat}, ${curLng}`);
                     }
+                    
                     lastLat = curLat;
                     lastLng = curLng;
 
